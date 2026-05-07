@@ -38,13 +38,14 @@ if [[ -f "$ENV_FILE" ]]; then
     warn "Znaleziono istniejący plik konfiguracyjny: $ENV_FILE"
     read -rp "  Użyć istniejącej konfiguracji? [T/n]: " use_existing
     if [[ "${use_existing,,}" != "n" ]]; then
-        source "$ENV_FILE"
-        BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
-        CHAT_ID="${TELEGRAM_CHAT_ID:-}"
-        RAID_DEV="${RAID_DEVICE:-/dev/md0}"
-        MONITOR_DISKS="${MONITOR_DISKS:-/dev/sda /dev/sdb /dev/sdc /dev/sdd}"
-        DISK_THRESHOLD="${DISK_SPACE_THRESHOLD:-90}"
-        CHECK_INTERVAL="${CHECK_INTERVAL:-5}"
+        _grep_env() { grep -m1 "^$1=" "$ENV_FILE" | cut -d'=' -f2- | tr -d '"'; }
+        BOT_TOKEN=$(_grep_env TELEGRAM_BOT_TOKEN)
+        CHAT_ID=$(_grep_env TELEGRAM_CHAT_ID)
+        RAID_DEV=$(_grep_env RAID_DEVICE); RAID_DEV="${RAID_DEV:-/dev/md0}"
+        MONITOR_DISKS=$(_grep_env MONITOR_DISKS); MONITOR_DISKS="${MONITOR_DISKS:-/dev/sda /dev/sdb /dev/sdc /dev/sdd}"
+        DISK_THRESHOLD=$(_grep_env DISK_SPACE_THRESHOLD); DISK_THRESHOLD="${DISK_THRESHOLD:-90}"
+        CHECK_INTERVAL=$(_grep_env CHECK_INTERVAL); CHECK_INTERVAL="${CHECK_INTERVAL:-5}"
+        SCRIPT_UPDATE_URL=$(_grep_env SCRIPT_UPDATE_URL)
         ok "Wczytano istniejącą konfigurację"
     fi
 fi

@@ -40,7 +40,7 @@ SEARCH_PATHS=(
 
 FOUND=0
 for path in "${SEARCH_PATHS[@]}"; do
-    for match in $path/currency_monitor.sh $path 2>/dev/null; do
+    for match in "$path/currency_monitor.sh" "$path"; do
         if [[ -f "$match" ]] && [[ "$match" == *currency_monitor.sh ]]; then
             warn "Znaleziono: $match"
             read -rp "  Usunąć? [t/N]: " ans
