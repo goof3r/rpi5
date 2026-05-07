@@ -546,7 +546,7 @@ def change_str(current: float, reference: float, label: str) -> str:
 
 async def cmd_kurs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Aktualny kurs USD i EUR z wielu źródeł."""
-    await update.message.reply_text("⏳ Pobieram kursy z wielu źródeł…")
+    await update.message.reply_text("⏳ Pobieram kursy…")
 
     usd_nbp = nbp_fetch_rate("USD")
     eur_nbp = nbp_fetch_rate("EUR")
@@ -566,45 +566,54 @@ async def cmd_kurs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     usd_rates = load_rates_today("USD")
     eur_rates  = load_rates_today("EUR")
-    usd_prev  = load_yesterday_close("USD")
+    usd_prev   = load_yesterday_close("USD")
     eur_prev   = load_yesterday_close("EUR")
 
-    def fmt_rate(val: float | None) -> str:
-        return f"<b>{val:.4f} PLN</b>" if val is not None else "❌ niedostępny"
+    def section(symbol: str, flag: str,
+                nbp: float | None, rev: float | None, wlt: dict | None,
+                rates: list, prev: float | None) -> list[str]:
+        sep = "━━━━━━━━━━━━━━━━━━━━━━━━━"
+        out = [f"{sep}", f"{flag} <b>{symbol} / PLN</b>", ""]
 
-    def fmt_wlt(pair: dict | None) -> str:
-        if pair is None:
-            return "❌ niedostępny"
-        return f"kupno <b>{pair['bid']:.4f}</b> / sprzedaż <b>{pair['ask']:.4f}</b> PLN"
+        # NBP
+        if nbp is not None:
+            out.append(f"🏦 <b>NBP</b>  (oficjalny kurs sprzedaży)")
+            out.append(f"   <b>{nbp:.4f} PLN</b>")
+            if len(rates) > 1:
+                out.append(f"   {change_str(nbp, rates[0], 'od rana')}")
+            if prev:
+                out.append(f"   {change_str(nbp, prev, 'vs wczoraj')}")
+        else:
+            out.append("🏦 <b>NBP</b>  ❌ niedostępny")
 
-    now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-    lines = [f"💱 <b>Kursy walut — {now}</b>\n"]
+        out.append("")
 
-    lines.append("💵 <b>USD/PLN</b>")
-    lines.append(f"  🏦 NBP (sprzedaż):        {fmt_rate(usd_nbp)}")
-    if usd_nbp:
-        usd_chg  = change_str(usd_nbp, usd_rates[0], "od rana") if len(usd_rates) > 1 else "pierwszy pomiar dnia"
-        usd_yday = change_str(usd_nbp, usd_prev, "vs wczoraj") if usd_prev else "brak danych"
-        lines.append(f"              {usd_chg}")
-        lines.append(f"              {usd_yday}")
-    lines.append(f"  🔄 Revolut (mid-market): {fmt_rate(usd_rev)}")
-    lines.append(f"  🌐 InternetowyKantor.pl: {fmt_wlt(usd_wlt)}")
-    lines.append(f"  🏪 kantor.pl:            ⚠️ brak API (wymaga przeglądarki)")
-    lines.append(f"  💎 zen.com:              ⚠️ brak API (wymaga przeglądarki)\n")
+        # Revolut
+        if rev is not None:
+            out.append(f"🔄 <b>Revolut</b>  (kurs mid-market)")
+            out.append(f"   <b>{rev:.4f} PLN</b>")
+        else:
+            out.append("🔄 <b>Revolut</b>  ❌ niedostępny")
 
-    lines.append("💶 <b>EUR/PLN</b>")
-    lines.append(f"  🏦 NBP (sprzedaż):        {fmt_rate(eur_nbp)}")
-    if eur_nbp:
-        eur_chg  = change_str(eur_nbp, eur_rates[0], "od rana") if len(eur_rates) > 1 else "pierwszy pomiar dnia"
-        eur_yday = change_str(eur_nbp, eur_prev, "vs wczoraj") if eur_prev else "brak danych"
-        lines.append(f"              {eur_chg}")
-        lines.append(f"              {eur_yday}")
-    lines.append(f"  🔄 Revolut (mid-market): {fmt_rate(eur_rev)}")
-    lines.append(f"  🌐 InternetowyKantor.pl: {fmt_wlt(eur_wlt)}")
-    lines.append(f"  🏪 kantor.pl:            ⚠️ brak API (wymaga przeglądarki)")
-    lines.append(f"  💎 zen.com:              ⚠️ brak API (wymaga przeglądarki)\n")
+        out.append("")
 
-    lines.append("📡 Źródła: NBP Tabela C · Revolut · Walutomat (InternetowyKantor.pl)")
+        # InternetowyKantor.pl
+        if wlt is not None:
+            out.append(f"🌐 <b>InternetowyKantor.pl</b>  (rynek P2P)")
+            out.append(f"   Kupno:     <b>{wlt['bid']:.4f} PLN</b>")
+            out.append(f"   Sprzedaż:  <b>{wlt['ask']:.4f} PLN</b>")
+        else:
+            out.append("🌐 <b>InternetowyKantor.pl</b>  ❌ niedostępny")
+
+        return out
+
+    now = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
+    lines = [f"💱 <b>Kursy walut</b>  —  {now}", ""]
+    lines += section("USD", "💵", usd_nbp, usd_rev, usd_wlt, usd_rates, usd_prev)
+    lines.append("")
+    lines += section("EUR", "💶", eur_nbp, eur_rev, eur_wlt, eur_rates, eur_prev)
+    lines.append("")
+    lines.append("📡 <i>NBP Tabela C · Revolut · Walutomat API</i>")
 
     await _send_pages(update.message, "\n".join(lines))
 
