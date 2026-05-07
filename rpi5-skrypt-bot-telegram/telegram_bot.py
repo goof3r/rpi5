@@ -686,6 +686,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🖥️ <b>Bot monitorowania serwera i kursów walut</b>\n\n"
         "<b>── Serwer (RPi5) ──</b>\n"
         "  /rpi5_status   — pełny przegląd systemu\n"
+        "  /rpi5_info     — informacje o systemie (uname)\n"
         "  /rpi5_disks    — stan dysków\n"
         "  /rpi5_raid     — status macierzy RAID\n"
         "  /rpi5_df       — wolne miejsce\n"
@@ -832,6 +833,26 @@ async def cmd_df(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"📦 <b>Wolne miejsce:</b>\n<pre>{esc(out[:1500])}</pre>",
         parse_mode="HTML"
     )
+
+
+async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not authorized(update):
+        await update.message.reply_text("🚫 Brak uprawnień.")
+        return
+
+    rc, uname, _ = run("uname -a")
+    rc, hostname, _ = run("hostname -f")
+    rc, os_info, _ = run("cat /etc/os-release | grep -E '^PRETTY_NAME' | cut -d'=' -f2 | tr -d '\"'")
+    rc, arch, _ = run("dpkg --print-architecture 2>/dev/null || uname -m")
+
+    msg = (
+        f"🖥️ <b>Informacje o systemie</b>\n\n"
+        f"<b>Host:</b> <code>{esc(hostname or '?')}</code>\n"
+        f"<b>System:</b> <code>{esc(os_info or '?')}</code>\n"
+        f"<b>Arch:</b> <code>{esc(arch or '?')}</code>\n\n"
+        f"<b>uname -a:</b>\n<code>{esc(uname or '?')}</code>"
+    )
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 async def cmd_uptime(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1053,6 +1074,7 @@ def main():
     app.add_handler(CommandHandler("rpi5_df",     cmd_df))
     app.add_handler(CommandHandler("rpi5_uptime", cmd_uptime))
     app.add_handler(CommandHandler("rpi5_logs",   cmd_logs))
+    app.add_handler(CommandHandler("rpi5_info",    cmd_info))
     app.add_handler(CommandHandler("rpi5_reboot",  cmd_reboot))
     app.add_handler(CommandHandler("rpi5_update",  cmd_update))
     app.add_handler(CommandHandler("start",        cmd_start))
