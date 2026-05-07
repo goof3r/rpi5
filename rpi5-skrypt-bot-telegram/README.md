@@ -128,7 +128,7 @@ sudo systemctl restart telegram-bot
 
 ### Krok 2 — aktualizacja przez Telegram
 
-Po każdej zmianie skryptu wypchnij ją na GitHub, a następnie wyślij do bota:
+Sprawdza i ściąga najnowszą wersję skryptu :
 
 ```
 /rpi5_update
