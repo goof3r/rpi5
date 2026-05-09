@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Przeglądarka plików — Kombajny ścianowe</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --bg2:       #1a1d27;
+      --bg3:       #22263a;
+      --border:    #2e3350;
+      --gold:      #f0b429;
+      --gold-dim:  #a07820;
+      --text:      #d4d8f0;
+      --text-dim:  #7a80a0;
+      --accent:    #4a90d9;
+      --folder:    #f0b429;
+      --file:      #8ab4f8;
+      --radius:    8px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── NAGŁÓWEK ─────────────────────────────────────────────── */
+    header {
+      background: linear-gradient(160deg, #0a0c14 0%, #1a1d2f 60%, #0f1320 100%);
+      border-bottom: 2px solid var(--gold-dim);
+      padding: 24px 32px 20px;
+    }
+
+    .header-title {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .header-title h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--gold);
+      text-transform: uppercase;
+    }
+
+    .header-title p {
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      margin-top: 4px;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Trzy karty z grafikami kombajnów ─────────────────────── */
+    .machines-grid {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .machine-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      width: 300px;
+      flex-shrink: 0;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .machine-card:hover {
+      border-color: var(--gold-dim);
+      transform: translateY(-2px);
+    }
+
+    /* Kontener obrazka — zastąp src ścieżką do własnego zdjęcia */
+    .machine-card .img-wrap {
+      width: 100%;
+      height: 170px;
+      overflow: hidden;
+      background: #111420;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .machine-card .img-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Placeholder widoczny gdy brak pliku obrazka */
+    .machine-card .img-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      gap: 10px;
+      color: var(--text-dim);
+    }
+
+    .machine-card .img-placeholder svg {
+      opacity: 0.35;
+    }
+
+    .machine-card .img-placeholder span {
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+    }
+
+    .machine-card .card-footer {
+      padding: 10px 14px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .machine-card .brand-badge {
+      background: var(--gold);
+      color: #0a0c14;
+      font-weight: 800;
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      padding: 3px 9px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .machine-card .card-desc {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      line-height: 1.4;
+    }
+
+    /* ── PRZEGLĄDARKA PLIKÓW ──────────────────────────────────── */
+    main {
+      max-width: 960px;
+      margin: 32px auto;
+      padding: 0 20px 60px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .btn-open {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--gold);
+      color: #0a0c14;
+      font-weight: 700;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: var(--radius);
+      padding: 9px 20px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn-open:hover  { background: #ffc94d; }
+    .btn-open:active { transform: scale(0.97); }
+
+    .btn-collapse {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg3);
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .btn-collapse:hover { border-color: var(--accent); color: var(--text); }
+
+    .search-wrap {
+      flex: 1;
+      min-width: 180px;
+    }
+
+    .search-wrap input {
+      width: 100%;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.88rem;
+      padding: 8px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .search-wrap input:focus { border-color: var(--accent); }
+    .search-wrap input::placeholder { color: var(--text-dim); }
+
+    /* Statystyki */
+    .stats-bar {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      margin-bottom: 14px;
+      padding: 7px 12px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: none;
+    }
+
+    .stats-bar span { color: var(--gold); font-weight: 600; }
+
+    /* Drzewo plików */
+    #tree-container {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-dim);
+    }
+
+    .empty-state svg { opacity: 0.3; margin-bottom: 14px; }
+    .empty-state p { font-size: 0.9rem; }
+
+    /* Wpis drzewa */
+    .tree-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-bottom: 1px solid var(--border);
+      cursor: default;
+      user-select: none;
+      transition: background 0.1s;
+      font-size: 0.875rem;
+    }
+
+    .tree-item:last-child { border-bottom: none; }
+    .tree-item:hover { background: var(--bg3); }
+
+    .tree-item.folder { cursor: pointer; }
+    .tree-item.folder:hover .item-name { color: var(--gold); }
+
+    .tree-item.hidden-item { display: none; }
+
+    .indent { display: inline-block; width: 20px; flex-shrink: 0; }
+
+    .toggle-icon {
+      width: 16px;
+      flex-shrink: 0;
+      color: var(--text-dim);
+      font-size: 0.7rem;
+      text-align: center;
+      transition: transform 0.15s;
+    }
+
+    .toggle-icon.open { transform: rotate(90deg); }
+
+    .item-icon { font-size: 1rem; flex-shrink: 0; line-height: 1; }
+
+    .item-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .item-name.folder-name { color: var(--folder); font-weight: 500; }
+
+    .item-size {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+      margin-left: 8px;
+    }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+
+    /* Nie obsługiwane */
+    .no-support {
+      background: #2a1a1a;
+      border: 1px solid #6b2a2a;
+      border-radius: var(--radius);
+      padding: 20px;
+      text-align: center;
+      color: #e08080;
+      font-size: 0.9rem;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════
+     NAGŁÓWEK — Kombajny ścianowe
+     Aby dodać własne zdjęcia: umieść pliki PNG/JPG obok index.html
+     i zmień src="" na np. src="joy.jpg" w odpowiedniej karcie.
+══════════════════════════════════════════════════════════════ -->
+<header>
+  <div class="header-title">
+    <h1>Kombajny ścianowe</h1>
+    <p>Joy Global &nbsp;·&nbsp; Eickhoff &nbsp;·&nbsp; FAMUR</p>
+  </div>
+
+  <div class="machines-grid">
+
+    <!-- ── JOY ───────────────────────────────────────────── -->
+    <div class="machine-card">
+      <div class="img-wrap">
+        <!-- Zamień src="" na ścieżkę do własnego zdjęcia, np. src="joy.jpg" -->
+        <img src="" alt="Kombajn ścianowy Joy"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+        <div class="img-placeholder" style="display:flex;">
+          <svg width="80" height="48" viewBox="0 0 80 48" fill="none">
+            <rect x="2" y="18" width="76" height="22" rx="3" fill="#f0b429" opacity=".25"/>
+            <rect x="6" y="22" width="16" height="14" rx="2" fill="#f0b429" opacity=".5"/>
+            <circle cx="18" cy="40" r="6" fill="#f0b429" opacity=".4"/>
+            <circle cx="58" cy="40" r="6" fill="#f0b429" opacity=".4"/>
+            <rect x="26" y="14" width="10" height="26" rx="2" fill="#f0b429" opacity=".35"/>
+            <rect x="38" y="10" width="10" height="30" rx="2" fill="#f0b429" opacity=".35"/>
+            <rect x="50" y="14" width="10" height="26" rx="2" fill="#f0b429" opacity=".35"/>
+            <rect x="62" y="22" width="12" height="14" rx="2" fill="#f0b429" opacity=".5"/>
+          </svg>
+          <span>Wstaw zdjęcie kombajnu Joy</span>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="brand-badge">Joy</span>
+        <span class="card-desc">Kombajn ścianowy&nbsp;·&nbsp; Joy Global / Komatsu Mining</span>
+      </div>
+    </div>
+
+    <!-- ── EICKHOFF ───────────────────────────────────────── -->
+    <div class="machine-card">
+      <div class="img-wrap">
+        <img src="" alt="Kombajn ścianowy Eickhoff"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+        <div class="img-placeholder" style="display:flex;">
+          <svg width="80" height="48" viewBox="0 0 80 48" fill="none">
+            <rect x="2" y="18" width="76" height="22" rx="3" fill="#f0b429" opacity=".25"/>
+            <rect x="6" y="22" width="16" height="14" rx="2" fill="#f0b429" opacity=".5"/>
+            <circle cx="18" cy="40" r="6" fill="#f0b429" opacity=".4"/>
+            <circle cx="58" cy="40" r="6" fill="#f0b429" opacity=".4"/>
+            <rect x="26" y="12" width="12" height="28" rx="2" fill="#f0b429" opacity=".35"/>
+            <rect x="40" y="8"  width="12" height="32" rx="2" fill="#f0b429" opacity=".35"/>
+            <rect x="54" y="12" width="10" height="28" rx="2" fill="#f0b429" opacity=".35"/>
+            <rect x="64" y="22" width="10" height="14" rx="2" fill="#f0b429" opacity=".5"/>
+          </svg>
+          <span>Wstaw zdjęcie kombajnu Eickhoff</span>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="brand-badge">Eickhoff</span>
+        <span class="card-desc">Kombajn ścianowy&nbsp;·&nbsp; Eickhoff Bergbautechnik</span>
+      </div>
+    </div>
+
+    <!-- ── FAMUR ──────────────────────────────────────────── -->
+    <div class="machine-card">
+      <div class="img-wrap">
+        <img src="" alt="Kombajn ścianowy FAMUR"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+        <div class="img-placeholder" style="display:flex;">
+          <svg width="80" height="48" viewBox="0 0 80 48" fill="none">
+            <rect x="2" y="18" width="76" height="22" rx="3" fill="#f0b429" opacity=".25"/>
+            <rect x="6" y="22" width="14" height="14" rx="2" fill="#f0b429" opacity=".5"/>
+            <circle cx="16" cy="40" r="6" fill="#f0b429" opacity=".4"/>
+            <circle cx="60" cy="40" r="6" fill="#f0b429" opacity=".4"/>
+            <rect x="24" y="16" width="10" height="24" rx="2" fill="#f0b429" opacity=".35"/>
+            <rect x="36" y="10" width="12" height="30" rx="2" fill="#f0b429" opacity=".35"/>
+            <rect x="50" y="14" width="10" height="26" rx="2" fill="#f0b429" opacity=".35"/>
+            <rect x="62" y="22" width="12" height="14" rx="2" fill="#f0b429" opacity=".5"/>
+          </svg>
+          <span>Wstaw zdjęcie kombajnu FAMUR</span>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="brand-badge">FAMUR</span>
+        <span class="card-desc">Kombajn ścianowy&nbsp;·&nbsp; FAMUR Group S.A.</span>
+      </div>
+    </div>
+
+  </div><!-- /machines-grid -->
+</header>
+
+<!-- ══════════════════════════════════════════════════════════════
+     PRZEGLĄDARKA PLIKÓW
+══════════════════════════════════════════════════════════════ -->
+<main>
+  <div class="no-support" id="no-support">
+    ⚠️ Twoja przeglądarka nie obsługuje File System Access API.<br>
+    Użyj Chrome lub Edge w wersji 86+.
+  </div>
+
+  <div class="toolbar">
+    <button class="btn-open" id="btn-open" onclick="openDirectory()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M1 3.5A1.5 1.5 0 012.5 2h3.879a1.5 1.5 0 011.06.44l.94.94H13.5A1.5 1.5 0 0115 4.879V12.5a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9z"/>
+      </svg>
+      Wybierz folder
+    </button>
+
+    <button class="btn-collapse" id="btn-collapse" onclick="collapseAll()" style="display:none;">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+        <path d="M2 4l4 4 4-4"/>
+      </svg>
+      Zwiń wszystko
+    </button>
+
+    <div class="search-wrap">
+      <input type="text" id="search-input" placeholder="🔍  Szukaj pliku lub folderu…"
+             oninput="filterTree(this.value)" />
+    </div>
+  </div>
+
+  <div class="stats-bar" id="stats-bar"></div>
+
+  <div id="tree-container">
+    <div class="empty-state">
+      <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+        <rect x="4" y="16" width="48" height="34" rx="4" fill="#f0b429"/>
+        <path d="M4 20a4 4 0 014-4h14l4 6H52v28H8a4 4 0 01-4-4V20z" fill="#f0b429" opacity=".5"/>
+      </svg>
+      <p>Kliknij <strong>Wybierz folder</strong> aby wczytać strukturę katalogów</p>
+    </div>
+  </div>
+</main>
+
+<script>
+  // ── ikony wg rozszerzenia ─────────────────────────────────────
+  const EXT_ICONS = {
+    // obrazy
+    jpg:'🖼️', jpeg:'🖼️', png:'🖼️', gif:'🖼️', bmp:'🖼️', webp:'🖼️', svg:'🖼️', ico:'🖼️',
+    // wideo
+    mp4:'🎬', avi:'🎬', mkv:'🎬', mov:'🎬', wmv:'🎬', flv:'🎬',
+    // audio
+    mp3:'🎵', wav:'🎵', flac:'🎵', ogg:'🎵', aac:'🎵',
+    // dokumenty
+    pdf:'📄', doc:'📝', docx:'📝', xls:'📊', xlsx:'📊', ppt:'📋', pptx:'📋',
+    txt:'📃', md:'📃', rtf:'📃', odt:'📝', ods:'📊',
+    // kod
+    py:'🐍', js:'📜', ts:'📜', html:'🌐', css:'🎨', json:'📋', xml:'📋',
+    sh:'⚙️', bash:'⚙️', bat:'⚙️', ps1:'⚙️', php:'📜', java:'☕',
+    c:'📜', cpp:'📜', cs:'📜', go:'📜', rs:'📜', rb:'📜',
+    // archiwa
+    zip:'📦', rar:'📦', tar:'📦', gz:'📦', '7z':'📦',
+    // bazy danych
+    db:'🗄️', sqlite:'🗄️', sql:'🗄️',
+    // konfiguracja
+    env:'🔧', cfg:'🔧', ini:'🔧', conf:'🔧', yaml:'🔧', yml:'🔧', toml:'🔧',
+    // wykonywalne
+    exe:'⚡', msi:'⚡', deb:'⚡', rpm:'⚡',
+  };
+
+  function fileIcon(name) {
+    const ext = name.split('.').pop().toLowerCase();
+    return EXT_ICONS[ext] || '📄';
+  }
+
+  function fmtSize(bytes) {
+    if (bytes === null || bytes === undefined) return '';
+    if (bytes < 1024)       return bytes + ' B';
+    if (bytes < 1048576)    return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1073741824).toFixed(2) + ' GB';
+  }
+
+  // ── stan globalny ────────────────────────────────────────────
+  let totalFiles = 0;
+  let totalDirs  = 0;
+  let totalSize  = 0;
+
+  // ── otwarcie folderu ─────────────────────────────────────────
+  async function openDirectory() {
+    if (!window.showDirectoryPicker) {
+      document.getElementById('no-support').style.display = 'block';
+      return;
+    }
+    let dirHandle;
+    try {
+      dirHandle = await window.showDirectoryPicker();
+    } catch (e) {
+      return; // anulowano
+    }
+
+    const container = document.getElementById('tree-container');
+    container.innerHTML = '<div class="loading">⏳ Wczytuję strukturę katalogów…</div>';
+    document.getElementById('search-input').value = '';
+
+    totalFiles = 0; totalDirs = 0; totalSize = 0;
+
+    const ul = document.createElement('div');
+    await renderDir(dirHandle, ul, 0);
+    container.innerHTML = '';
+    container.appendChild(ul);
+
+    const stats = document.getElementById('stats-bar');
+    stats.style.display = 'block';
+    stats.innerHTML =
+      `Folder: <span>${dirHandle.name}</span> &nbsp;·&nbsp; ` +
+      `Katalogi: <span>${totalDirs}</span> &nbsp;·&nbsp; ` +
+      `Pliki: <span>${totalFiles}</span> &nbsp;·&nbsp; ` +
+      `Łączny rozmiar: <span>${fmtSize(totalSize)}</span>`;
+
+    document.getElementById('btn-collapse').style.display = 'inline-flex';
+  }
+
+  // ── renderowanie folderu (rekurencja) ────────────────────────
+  async function renderDir(dirHandle, container, depth) {
+    // zbierz wpisy i posortuj: katalogi pierwsze, potem pliki
+    const entries = [];
+    for await (const entry of dirHandle.values()) {
+      entries.push(entry);
+    }
+    entries.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name, 'pl', { sensitivity: 'base' });
+    });
+
+    for (const entry of entries) {
+      const row = document.createElement('div');
+      row.className = 'tree-item' + (entry.kind === 'directory' ? ' folder' : '');
+      row.dataset.name = entry.name.toLowerCase();
+
+      // wcięcie
+      for (let i = 0; i < depth; i++) {
+        const ind = document.createElement('span');
+        ind.className = 'indent';
+        row.appendChild(ind);
+      }
+
+      if (entry.kind === 'directory') {
+        totalDirs++;
+
+        const toggle = document.createElement('span');
+        toggle.className = 'toggle-icon';
+        toggle.textContent = '▶';
+        row.appendChild(toggle);
+
+        const icon = document.createElement('span');
+        icon.className = 'item-icon';
+        icon.textContent = '📁';
+        row.appendChild(icon);
+
+        const name = document.createElement('span');
+        name.className = 'item-name folder-name';
+        name.textContent = entry.name;
+        row.appendChild(name);
+
+        container.appendChild(row);
+
+        // kontener dzieci (leniwie wczytywany)
+        const children = document.createElement('div');
+        children.style.display = 'none';
+        children.dataset.loaded = 'false';
+        container.appendChild(children);
+
+        row.addEventListener('click', async () => {
+          const isOpen = toggle.classList.toggle('open');
+          icon.textContent = isOpen ? '📂' : '📁';
+          children.style.display = isOpen ? '' : 'none';
+          if (isOpen && children.dataset.loaded === 'false') {
+            children.dataset.loaded = 'loading';
+            await renderDir(entry, children, depth + 1);
+            children.dataset.loaded = 'true';
+            // ponów filtr jeśli aktywny
+            const q = document.getElementById('search-input').value;
+            if (q) filterTree(q);
+          }
+        });
+
+      } else {
+        // plik
+        totalFiles++;
+        let size = null;
+        try {
+          const file = await entry.getFile();
+          size = file.size;
+          totalSize += size;
+        } catch {}
+
+        const spacer = document.createElement('span');
+        spacer.className = 'toggle-icon';
+        row.appendChild(spacer);
+
+        const icon = document.createElement('span');
+        icon.className = 'item-icon';
+        icon.textContent = fileIcon(entry.name);
+        row.appendChild(icon);
+
+        const name = document.createElement('span');
+        name.className = 'item-name';
+        name.textContent = entry.name;
+        row.appendChild(name);
+
+        if (size !== null) {
+          const sz = document.createElement('span');
+          sz.className = 'item-size';
+          sz.textContent = fmtSize(size);
+          row.appendChild(sz);
+        }
+
+        container.appendChild(row);
+      }
+    }
+  }
+
+  // ── zwiń wszystko ────────────────────────────────────────────
+  function collapseAll() {
+    document.querySelectorAll('.toggle-icon.open').forEach(t => t.click());
+  }
+
+  // ── szukaj ──────────────────────────────────────────────────
+  function filterTree(query) {
+    const q = query.trim().toLowerCase();
+    document.querySelectorAll('.tree-item').forEach(row => {
+      if (!q) {
+        row.classList.remove('hidden-item');
+      } else {
+        const match = row.dataset.name && row.dataset.name.includes(q);
+        row.classList.toggle('hidden-item', !match);
+      }
+    });
+  }
+
+  // ── sprawdź wsparcie przeglądarki ───────────────────────────
+  if (!window.showDirectoryPicker) {
+    document.getElementById('no-support').style.display = 'block';
+    document.getElementById('btn-open').disabled = true;
+    document.getElementById('btn-open').style.opacity = '0.5';
+  }
+</script>
+
+</body>
+</html>
