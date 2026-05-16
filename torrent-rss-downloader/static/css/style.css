@@ -1,0 +1,25 @@
+body { font-size: 0.92rem; }
+
+.navbar-brand { font-size: 1.1rem; letter-spacing: 0.03em; font-weight: 700; }
+
+.card { border-radius: 0.6rem; }
+.card-header { font-size: 0.9rem; }
+
+.table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6c757d;
+  white-space: nowrap;
+}
+.table td { vertical-align: middle; }
+
+.badge { font-size: 0.72rem; padding: 0.28em 0.55em; }
+
+.form-control, .form-select { font-size: 0.88rem; }
+.btn-sm { font-size: 0.8rem; }
+
+.progress { border-radius: 4px; }
+
+/* Login card */
+.card.shadow-sm { border: none; }

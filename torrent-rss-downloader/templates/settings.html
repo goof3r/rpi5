@@ -1,0 +1,231 @@
+{% extends 'base.html' %}
+{% block title %}Ustawienia{% endblock %}
+
+{% block content %}
+<h5 class="mb-4"><i class="bi bi-gear me-2 text-warning"></i>Ustawienia</h5>
+
+<!-- ── Karta RSS ──────────────────────────────────────────────── -->
+<div class="card mb-4">
+  <div class="card-header fw-semibold">
+    <i class="bi bi-rss me-2 text-warning"></i>Kanał RSS
+  </div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('settings_rss') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label">URL kanału RSS</label>
+          <input type="url" name="feed_url" class="form-control"
+                 value="{{ rss_config.feed_url if rss_config else '' }}"
+                 placeholder="https://pte.nu/rss/TWOJ_TOKEN.xml" required />
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Interwał (minuty)</label>
+          <input type="number" name="poll_interval" class="form-control" min="1" max="1440"
+                 value="{{ rss_config.poll_interval if rss_config else 15 }}" />
+        </div>
+        <div class="col-md-2 d-flex align-items-end gap-2">
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-save me-1"></i>Zapisz
+          </button>
+          <button type="button" class="btn btn-outline-secondary" onclick="pollNow()">
+            <i class="bi bi-arrow-repeat"></i>
+          </button>
+        </div>
+      </div>
+    </form>
+    {% if rss_config and rss_config.last_fetched %}
+      <p class="text-muted small mt-2 mb-0">
+        Ostatnie pobranie: {{ rss_config.last_fetched.strftime('%d.%m.%Y %H:%M:%S') }} UTC
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Karta serwerów Transmission ───────────────────────────── -->
+<div class="card mb-4">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span class="fw-semibold"><i class="bi bi-hdd-network me-2 text-warning"></i>Serwery Transmission</span>
+    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#addServerModal">
+      <i class="bi bi-plus-lg me-1"></i>Dodaj serwer
+    </button>
+  </div>
+  <div class="card-body p-0">
+    {% if servers %}
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Nazwa</th>
+            <th>Host</th>
+            <th>Port</th>
+            <th>Użytkownik</th>
+            <th>Aktywny</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in servers %}
+          <tr>
+            <td class="fw-medium">{{ s.name }}</td>
+            <td class="text-muted">{{ s.host }}</td>
+            <td class="text-muted">{{ s.port }}</td>
+            <td class="text-muted">{{ s.username or '—' }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('server_toggle', sid=s.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button type="submit" class="btn btn-sm p-0 border-0 bg-transparent">
+                  {% if s.is_active %}
+                    <i class="bi bi-toggle-on text-success fs-5"></i>
+                  {% else %}
+                    <i class="bi bi-toggle-off text-secondary fs-5"></i>
+                  {% endif %}
+                </button>
+              </form>
+            </td>
+            <td class="text-end text-nowrap">
+              <button class="btn btn-outline-info btn-sm" onclick="testServer({{ s.id }}, '{{ s.name }}')"
+                      title="Testuj połączenie">
+                <i class="bi bi-plug"></i>
+              </button>
+              <button class="btn btn-outline-secondary btn-sm" title="Edytuj"
+                      onclick="openEditModal({{ s.id }}, '{{ s.name }}', '{{ s.host }}', {{ s.port }},
+                               '{{ s.username or '' }}', '{{ s.base_path }}')">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <form method="POST" action="{{ url_for('server_delete', sid=s.id) }}" class="d-inline"
+                    onsubmit="return confirm('Usunąć serwer &quot;{{ s.name }}&quot;?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button type="submit" class="btn btn-outline-danger btn-sm" title="Usuń">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-hdd-network display-5 d-block mb-2"></i>
+      <p class="mb-0">Brak serwerów. Dodaj pierwszy serwer Transmission.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Karta zmiany hasła ─────────────────────────────────────── -->
+<div class="card mb-4" id="password">
+  <div class="card-header fw-semibold">
+    <i class="bi bi-key me-2 text-warning"></i>Zmień hasło
+  </div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('settings_password') }}" style="max-width:400px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <div class="mb-3">
+        <label class="form-label">Obecne hasło</label>
+        <input type="password" name="current_password" class="form-control" required />
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Nowe hasło</label>
+        <input type="password" name="new_password" class="form-control" minlength="6" required />
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Potwierdź nowe hasło</label>
+        <input type="password" name="confirm_password" class="form-control" minlength="6" required />
+      </div>
+      <button type="submit" class="btn btn-warning">
+        <i class="bi bi-save me-1"></i>Zmień hasło
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Dodaj serwer -->
+<div class="modal fade" id="addServerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('server_add') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-plus-circle me-2 text-warning"></i>Dodaj serwer Transmission</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          {% include '_server_form.html' %}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+          <button type="submit" class="btn btn-warning">Dodaj</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Edytuj serwer -->
+<div class="modal fade" id="editServerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="editServerForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-pencil me-2 text-warning"></i>Edytuj serwer</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          {% include '_server_form.html' %}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+          <button type="submit" class="btn btn-warning">Zapisz</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function pollNow() {
+  showToast('Pobieranie RSS…', 'info');
+  fetch('/api/rss/poll-now', {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrfToken()},
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.ok) showToast(`RSS: nowe=${d.new}, pominięte=${d.skipped}, błędy=${d.errors}`, 'success');
+    else showToast('Błąd: ' + (d.error || '?'), 'danger');
+  })
+  .catch(() => showToast('Błąd sieci', 'danger'));
+}
+
+function testServer(sid, name) {
+  showToast(`Testuję połączenie z „${name}"…`, 'info');
+  fetch(`/api/servers/${sid}/test`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrfToken()},
+  })
+  .then(r => r.json())
+  .then(d => showToast(d.message, d.ok ? 'success' : 'danger'))
+  .catch(() => showToast('Błąd sieci', 'danger'));
+}
+
+const _editModal = new bootstrap.Modal(document.getElementById('editServerModal'));
+
+function openEditModal(sid, name, host, port, username, basePath) {
+  const form = document.getElementById('editServerForm');
+  form.action = `/settings/servers/${sid}/edit`;
+  form.querySelector('[name="name"]').value      = name;
+  form.querySelector('[name="host"]').value      = host;
+  form.querySelector('[name="port"]').value      = port;
+  form.querySelector('[name="username"]').value  = username;
+  form.querySelector('[name="base_path"]').value = basePath;
+  form.querySelector('[name="password"]').value  = '';
+  _editModal.show();
+}
+</script>
+{% endblock %}

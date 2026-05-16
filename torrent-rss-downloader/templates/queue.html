@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block title %}Kolejka pobrań{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h5 class="mb-0"><i class="bi bi-download me-2 text-warning"></i>Kolejka pobrań</h5>
+  <button class="btn btn-outline-secondary btn-sm" onclick="refreshAll()">
+    <i class="bi bi-arrow-clockwise me-1"></i>Odśwież statusy
+  </button>
+</div>
+
+{% if downloads %}
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm mb-0">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Tytuł torrenta</th>
+          <th>Serwer</th>
+          <th>Status</th>
+          <th style="min-width:140px;">Postęp</th>
+          <th class="text-nowrap">Dodano</th>
+          <th>Błąd</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in downloads %}
+        <tr id="row-{{ d.id }}">
+          <td class="text-muted small">{{ d.id }}</td>
+          <td class="text-break" style="max-width:300px;">
+            <small>{{ d.rss_item.title[:90] }}{% if d.rss_item.title|length > 90 %}…{% endif %}</small>
+          </td>
+          <td class="text-nowrap small text-muted">
+            {% if d.server %}{{ d.server.name }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="badge {{ d.status_badge_class() }}" id="badge-{{ d.id }}">
+              {{ d.status_label() }}
+            </span>
+          </td>
+          <td>
+            <div class="progress" style="height:6px;" title="{{ d.progress }}%">
+              <div class="progress-bar
+                          {% if d.status == 'completed' %}bg-success
+                          {% elif d.status == 'error' %}bg-danger
+                          {% elif d.status == 'seeding' %}bg-info
+                          {% else %}bg-primary{% endif %}"
+                   id="bar-{{ d.id }}"
+                   style="width:{{ d.progress }}%"
+                   role="progressbar"
+                   aria-valuenow="{{ d.progress }}"
+                   aria-valuemin="0" aria-valuemax="100">
+              </div>
+            </div>
+            <small class="text-muted" id="pct-{{ d.id }}">{{ '%.1f'|format(d.progress) }}%</small>
+          </td>
+          <td class="text-nowrap text-muted small">
+            {{ d.added_at.strftime('%d.%m.%Y %H:%M') }}
+          </td>
+          <td style="max-width:200px;">
+            {% if d.error_message %}
+              <small class="text-danger" title="{{ d.error_message }}">
+                {{ d.error_message[:60] }}{% if d.error_message|length > 60 %}…{% endif %}
+              </small>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-inbox display-4 d-block mb-3"></i>
+  <p>Brak pobrań. <a href="{{ url_for('browse') }}">Przeglądaj RSS</a> aby dodać torrenty.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// IDs aktywnych pobrań do auto-odświeżania
+const activeIds = [
+  {% for d in downloads %}
+    {% if d.is_active and d.transmission_id %}{{ d.id }},{% endif %}
+  {% endfor %}
+];
+
+function updateRow(data) {
+  const badge = document.getElementById('badge-' + data.id);
+  const bar   = document.getElementById('bar-' + data.id);
+  const pct   = document.getElementById('pct-' + data.id);
+  if (!badge) return;
+
+  badge.className = 'badge ' + data.badge_class;
+  badge.textContent = data.status_label;
+
+  if (bar) {
+    bar.style.width = data.progress + '%';
+    bar.setAttribute('aria-valuenow', data.progress);
+  }
+  if (pct) pct.textContent = data.progress.toFixed(1) + '%';
+}
+
+function refreshAll() {
+  const ids = activeIds.length ? activeIds :
+    [...document.querySelectorAll('[id^="badge-"]')].map(el => parseInt(el.id.replace('badge-', '')));
+
+  ids.forEach(id => {
+    fetch('/api/downloads/' + id + '/status')
+      .then(r => r.json())
+      .then(updateRow)
+      .catch(() => {});
+  });
+}
+
+// Auto-odśwież co 30s jeśli są aktywne pobrania
+if (activeIds.length > 0) {
+  setInterval(refreshAll, 30000);
+}
+</script>
+{% endblock %}

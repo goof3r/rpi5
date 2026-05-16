@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Logowanie{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-4 col-sm-8">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <div class="text-center mb-4">
+          <i class="bi bi-cloud-arrow-down-fill text-warning" style="font-size:2.5rem;"></i>
+          <h4 class="mt-2 mb-0">Torrent RSS Downloader</h4>
+          <p class="text-muted small">Zaloguj się aby kontynuować</p>
+        </div>
+        <form method="POST" action="{{ url_for('login') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <div class="mb-3">
+            <label class="form-label">Nazwa użytkownika</label>
+            <input type="text" name="username" class="form-control" autofocus required />
+          </div>
+          <div class="mb-4">
+            <label class="form-label">Hasło</label>
+            <input type="password" name="password" class="form-control" required />
+          </div>
+          <button type="submit" class="btn btn-warning w-100 fw-bold">
+            <i class="bi bi-box-arrow-in-right me-1"></i>Zaloguj się
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
