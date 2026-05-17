@@ -28,9 +28,36 @@
           <button type="submit" class="btn btn-warning">
             <i class="bi bi-save me-1"></i>Zapisz
           </button>
-          <button type="button" class="btn btn-outline-secondary" onclick="pollNow()">
+          <button type="button" class="btn btn-outline-secondary" onclick="pollNow()" title="Odśwież teraz">
             <i class="bi bi-arrow-repeat"></i>
           </button>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Domyślny folder pobrań</label>
+          <input type="text" name="default_download_dir" class="form-control"
+                 value="{{ rss_config.default_download_dir if rss_config and rss_config.default_download_dir else '' }}"
+                 placeholder="/home/user/Downloads/torrents" />
+          <div class="form-text">Używany przez auto-pobieranie gdy wzorzec nie ma własnego folderu.</div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Klient torrent (auto-pobieranie)</label>
+          <select name="torrent_client" class="form-select">
+            <option value="transmission"
+              {% if not rss_config or rss_config.torrent_client == 'transmission' %}selected{% endif %}>
+              Transmission (RPC)
+            </option>
+            <option value="wget"
+              {% if rss_config and rss_config.torrent_client == 'wget' %}selected{% endif %}>
+              Plik .torrent (wget)
+            </option>
+            <option value="auto"
+              {% if rss_config and rss_config.torrent_client == 'auto' %}selected{% endif %}>
+              Auto (Transmission → plik)
+            </option>
+          </select>
+          <div class="form-text">
+            <b>wget</b> – zapisuje plik .torrent do folderu (dla klientów z watch folder).
+          </div>
         </div>
       </div>
     </form>
@@ -38,6 +65,89 @@
       <p class="text-muted small mt-2 mb-0">
         Ostatnie pobranie: {{ rss_config.last_fetched.strftime('%d.%m.%Y %H:%M:%S') }} UTC
       </p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Karta wzorców auto-pobierania ─────────────────────────── -->
+<div class="card mb-4">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <span class="fw-semibold">
+      <i class="bi bi-robot me-2 text-warning"></i>Wzorce auto-pobierania
+    </span>
+    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#addPatternModal">
+      <i class="bi bi-plus-lg me-1"></i>Dodaj wzorzec
+    </button>
+  </div>
+  <div class="card-body {% if patterns %}p-0{% endif %}">
+    {% if not patterns %}
+    <p class="text-muted small mb-2">
+      Wstawki RSS pasujące do wzorca są automatycznie pobierane po każdym odświeżeniu kanału RSS.
+      Użyj <code>%</code> jako symbolu zastępczego dowolnej liczby znaków
+      (np. <code>Zuzel.PGE.Ekstraliga.2026.05%</code> dopasuje wszystkie mecze z maja 2026).
+    </p>
+    <div class="text-center text-muted py-3">
+      <i class="bi bi-robot display-5 d-block mb-2 opacity-25"></i>
+      <p class="mb-0">Brak wzorców. Dodaj pierwszy wzorzec aby włączyć auto-pobieranie.</p>
+    </div>
+    {% else %}
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Wzorzec</th>
+            <th>Serwer</th>
+            <th>Folder docelowy</th>
+            <th>Aktywny</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in patterns %}
+          <tr>
+            <td class="fw-medium font-monospace small">{{ p.pattern }}</td>
+            <td class="text-nowrap small">
+              {% if p.server %}
+                <span class="badge bg-secondary">{{ p.server.name }}</span>
+              {% else %}
+                <span class="text-muted">— (auto)</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">{{ p.dest_dir or '— (domyślny)' }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('pattern_toggle', pid=p.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button type="submit" class="btn btn-sm p-0 border-0 bg-transparent">
+                  {% if p.is_active %}
+                    <i class="bi bi-toggle-on text-success fs-5"></i>
+                  {% else %}
+                    <i class="bi bi-toggle-off text-secondary fs-5"></i>
+                  {% endif %}
+                </button>
+              </form>
+            </td>
+            <td class="text-end text-nowrap">
+              <button class="btn btn-outline-secondary btn-sm" title="Edytuj"
+                      onclick="openEditPatternModal(
+                        {{ p.id }},
+                        '{{ p.pattern | replace("'", "\\'") }}',
+                        '{{ p.dest_dir or '' }}',
+                        {{ p.server_id or 'null' }})">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <form method="POST" action="{{ url_for('pattern_delete', pid=p.id) }}" class="d-inline"
+                    onsubmit="return confirm('Usunąć wzorzec?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button type="submit" class="btn btn-outline-danger btn-sm" title="Usuń">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {% endif %}
   </div>
 </div>
@@ -142,6 +252,104 @@
   </div>
 </div>
 
+<!-- Modal: Dodaj wzorzec -->
+<div class="modal fade" id="addPatternModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('pattern_add') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-plus-circle me-2 text-warning"></i>Dodaj wzorzec auto-pobierania
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Wzorzec tytułu <span class="text-danger">*</span></label>
+            <input type="text" name="pattern" class="form-control font-monospace"
+                   placeholder="Nemesis.2026.S01E%%.DV.2160p.WEB.h265-GRACE" required />
+            <div class="form-text">
+              Użyj <code>%</code> jako symbolu zastępczego dowolnej liczby znaków.
+              Np. <code>Zuzel.PGE.Ekstraliga.2026.05%</code> dopasuje wszystkie mecze z maja 2026.
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Serwer Transmission</label>
+            <select name="server_id" class="form-select">
+              <option value="">— automatyczny (pierwszy aktywny) —</option>
+              {% for s in servers %}
+                <option value="{{ s.id }}">{{ s.name }} ({{ s.host }}:{{ s.port }})</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">
+              Dotyczy tylko trybu <b>Transmission</b>. Przy <b>wget</b> plik trafia do folderu docelowego.
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Folder docelowy</label>
+            <input type="text" name="dest_dir" class="form-control"
+                   placeholder="{{ rss_config.default_download_dir or '/home/user/Downloads' }}" />
+            <div class="form-text">Pozostaw puste aby użyć domyślnego folderu z konfiguracji RSS.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+          <button type="submit" class="btn btn-warning">Dodaj wzorzec</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Edytuj wzorzec -->
+<div class="modal fade" id="editPatternModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="editPatternForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-pencil me-2 text-warning"></i>Edytuj wzorzec
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Wzorzec tytułu <span class="text-danger">*</span></label>
+            <input type="text" name="pattern" class="form-control font-monospace" required />
+            <div class="form-text">
+              Użyj <code>%</code> jako symbolu zastępczego dowolnej liczby znaków.
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Serwer Transmission</label>
+            <select name="server_id" class="form-select">
+              <option value="">— automatyczny (pierwszy aktywny) —</option>
+              {% for s in servers %}
+                <option value="{{ s.id }}">{{ s.name }} ({{ s.host }}:{{ s.port }})</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">
+              Dotyczy tylko trybu <b>Transmission</b>. Przy <b>wget</b> plik trafia do folderu docelowego.
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Folder docelowy</label>
+            <input type="text" name="dest_dir" class="form-control"
+                   placeholder="{{ rss_config.default_download_dir or '/home/user/Downloads' }}" />
+            <div class="form-text">Pozostaw puste aby użyć domyślnego folderu z konfiguracji RSS.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+          <button type="submit" class="btn btn-warning">Zapisz</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Dodaj serwer -->
 <div class="modal fade" id="addServerModal" tabindex="-1">
   <div class="modal-dialog">
@@ -197,8 +405,12 @@ function pollNow() {
   })
   .then(r => r.json())
   .then(d => {
-    if (d.ok) showToast(`RSS: nowe=${d.new}, pominięte=${d.skipped}, błędy=${d.errors}`, 'success');
-    else showToast('Błąd: ' + (d.error || '?'), 'danger');
+    if (d.ok) {
+      const auto = d.auto_downloaded ? `, auto=${d.auto_downloaded}` : '';
+      showToast(`RSS: nowe=${d.new}, pominięte=${d.skipped}, błędy=${d.errors}${auto}`, 'success');
+    } else {
+      showToast('Błąd: ' + (d.error || '?'), 'danger');
+    }
   })
   .catch(() => showToast('Błąd sieci', 'danger'));
 }
@@ -212,6 +424,18 @@ function testServer(sid, name) {
   .then(r => r.json())
   .then(d => showToast(d.message, d.ok ? 'success' : 'danger'))
   .catch(() => showToast('Błąd sieci', 'danger'));
+}
+
+const _editPatternModal = new bootstrap.Modal(document.getElementById('editPatternModal'));
+
+function openEditPatternModal(pid, pattern, destDir, serverId) {
+  const form = document.getElementById('editPatternForm');
+  form.action = `/settings/patterns/${pid}/edit`;
+  form.querySelector('[name="pattern"]').value  = pattern;
+  form.querySelector('[name="dest_dir"]').value = destDir || '';
+  const sel = form.querySelector('[name="server_id"]');
+  sel.value = serverId !== null ? String(serverId) : '';
+  _editPatternModal.show();
 }
 
 const _editModal = new bootstrap.Modal(document.getElementById('editServerModal'));

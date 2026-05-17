@@ -30,9 +30,21 @@
           <td class="text-muted small">{{ d.id }}</td>
           <td class="text-break" style="max-width:300px;">
             <small>{{ d.rss_item.title[:90] }}{% if d.rss_item.title|length > 90 %}…{% endif %}</small>
+            {% if d.auto_downloaded %}
+              <br><span class="badge bg-light text-dark border" style="font-size:0.65rem;">
+                <i class="bi bi-robot"></i> auto
+              </span>
+            {% endif %}
           </td>
           <td class="text-nowrap small text-muted">
-            {% if d.server %}{{ d.server.name }}{% else %}—{% endif %}
+            {% if d.server %}
+              {{ d.server.name }}
+            {% elif d.save_path %}
+              <span title="{{ d.save_path }}">
+                <i class="bi bi-folder2"></i>
+                …{{ d.save_path[-28:] if d.save_path|length > 28 else d.save_path }}
+              </span>
+            {% else %}—{% endif %}
           </td>
           <td>
             <span class="badge {{ d.status_badge_class() }}" id="badge-{{ d.id }}">
@@ -42,7 +54,7 @@
           <td>
             <div class="progress" style="height:6px;" title="{{ d.progress }}%">
               <div class="progress-bar
-                          {% if d.status == 'completed' %}bg-success
+                          {% if d.status in ('completed', 'saved') %}bg-success
                           {% elif d.status == 'error' %}bg-danger
                           {% elif d.status == 'seeding' %}bg-info
                           {% else %}bg-primary{% endif %}"

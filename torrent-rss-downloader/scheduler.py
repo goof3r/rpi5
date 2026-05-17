@@ -47,8 +47,9 @@ def reschedule_rss(minutes: int):
 
 def _rss_poll_job(app):
     try:
-        from rss_fetcher import fetch_and_store
+        from rss_fetcher import fetch_and_store, auto_download_matching
         fetch_and_store(app)
+        auto_download_matching(app)
     except Exception as e:
         logger.error('Błąd w zadaniu RSS poll: %s', e)
 

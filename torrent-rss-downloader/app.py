@@ -10,7 +10,7 @@ from flask_login import (LoginManager, login_user, logout_user,
 from flask_wtf.csrf import CSRFProtect
 
 from config import Config
-from models import db, User, RssConfig, RssItem, TransmissionServer, Download
+from models import db, User, RssConfig, RssItem, TransmissionServer, Download, WatchPattern
 
 logging.basicConfig(
     level=logging.INFO,
@@ -130,23 +130,31 @@ def queue():
 def settings():
     rss_config = RssConfig.query.first()
     servers    = TransmissionServer.query.order_by(TransmissionServer.name).all()
-    return render_template('settings.html', rss_config=rss_config, servers=servers)
+    patterns   = WatchPattern.query.order_by(WatchPattern.id).all()
+    return render_template('settings.html', rss_config=rss_config,
+                           servers=servers, patterns=patterns)
 
 
 @app.route('/settings/rss', methods=['POST'])
 @login_required
 def settings_rss():
-    feed_url      = request.form.get('feed_url', '').strip()
-    poll_interval = int(request.form.get('poll_interval', 15))
-    poll_interval = max(1, min(poll_interval, 1440))
+    feed_url             = request.form.get('feed_url', '').strip()
+    poll_interval        = int(request.form.get('poll_interval', 15))
+    poll_interval        = max(1, min(poll_interval, 1440))
+    default_download_dir = request.form.get('default_download_dir', '').strip() or None
+    torrent_client       = request.form.get('torrent_client', 'transmission')
+    if torrent_client not in ('transmission', 'wget', 'auto'):
+        torrent_client = 'transmission'
 
     config = RssConfig.query.first()
     if not config:
         config = RssConfig()
         db.session.add(config)
-    config.feed_url      = feed_url
-    config.poll_interval = poll_interval
-    config.updated_at    = datetime.utcnow()
+    config.feed_url             = feed_url
+    config.poll_interval        = poll_interval
+    config.default_download_dir = default_download_dir
+    config.torrent_client       = torrent_client
+    config.updated_at           = datetime.utcnow()
     db.session.commit()
 
     try:
@@ -179,6 +187,68 @@ def settings_password():
     current_user.password_hash = bcrypt.hashpw(new_pw, bcrypt.gensalt()).decode('utf-8')
     db.session.commit()
     flash('Hasło zostało zmienione.', 'success')
+    return redirect(url_for('settings'))
+
+
+# ── Wzorce auto-pobierania ────────────────────────────────────────────────────
+
+@app.route('/settings/patterns/add', methods=['POST'])
+@login_required
+def pattern_add():
+    pattern   = request.form.get('pattern', '').strip()
+    dest_dir  = request.form.get('dest_dir', '').strip() or None
+    server_id = request.form.get('server_id', type=int) or None
+    if not pattern:
+        flash('Wzorzec nie może być pusty.', 'danger')
+        return redirect(url_for('settings'))
+    if server_id and not TransmissionServer.query.get(server_id):
+        server_id = None
+    p = WatchPattern(pattern=pattern, dest_dir=dest_dir, server_id=server_id, is_active=True)
+    db.session.add(p)
+    db.session.commit()
+    flash(f'Wzorzec „{pattern}" dodany.', 'success')
+    return redirect(url_for('settings'))
+
+
+@app.route('/settings/patterns/<int:pid>/edit', methods=['POST'])
+@login_required
+def pattern_edit(pid):
+    p = WatchPattern.query.get_or_404(pid)
+    pattern   = request.form.get('pattern', '').strip()
+    dest_dir  = request.form.get('dest_dir', '').strip() or None
+    server_id = request.form.get('server_id', type=int) or None
+    if not pattern:
+        flash('Wzorzec nie może być pusty.', 'danger')
+        return redirect(url_for('settings'))
+    if server_id and not TransmissionServer.query.get(server_id):
+        server_id = None
+    p.pattern   = pattern
+    p.dest_dir  = dest_dir
+    p.server_id = server_id
+    db.session.commit()
+    flash(f'Wzorzec „{pattern}" zaktualizowany.', 'success')
+    return redirect(url_for('settings'))
+
+
+@app.route('/settings/patterns/<int:pid>/delete', methods=['POST'])
+@login_required
+def pattern_delete(pid):
+    p = WatchPattern.query.get_or_404(pid)
+    name = p.pattern
+    db.session.delete(p)
+    db.session.commit()
+    flash(f'Wzorzec „{name}" usunięty.', 'success')
+    return redirect(url_for('settings'))
+
+
+@app.route('/settings/patterns/<int:pid>/toggle', methods=['POST'])
+@login_required
+def pattern_toggle(pid):
+    p = WatchPattern.query.get_or_404(pid)
+    p.is_active = not p.is_active
+    db.session.commit()
+    state = 'włączony' if p.is_active else 'wyłączony'
+    flash(f'Wzorzec „{p.pattern}" {state}.', 'success')
     return redirect(url_for('settings'))
 
 
@@ -246,9 +316,9 @@ def server_toggle(sid):
 @app.route('/api/download', methods=['POST'])
 @login_required
 def api_download():
-    data       = request.get_json(force=True, silent=True) or {}
-    item_id    = data.get('rss_item_id')
-    server_id  = data.get('server_id')
+    data      = request.get_json(force=True, silent=True) or {}
+    item_id   = data.get('rss_item_id')
+    server_id = data.get('server_id')
 
     item   = RssItem.query.get(item_id)
     server = TransmissionServer.query.get(server_id)
@@ -313,9 +383,10 @@ def api_server_test(sid):
 @login_required
 def api_rss_poll_now():
     try:
-        from rss_fetcher import fetch_and_store
+        from rss_fetcher import fetch_and_store, auto_download_matching
         counts = fetch_and_store(app)
-        return jsonify(ok=True, **counts)
+        auto   = auto_download_matching(app)
+        return jsonify(ok=True, auto_downloaded=auto, **counts)
     except Exception as e:
         return jsonify(ok=False, error=str(e)), 500
 
@@ -332,7 +403,7 @@ def api_filter_options():
     return jsonify(categories=sorted(categories), languages=sorted(languages), servers=servers)
 
 
-# ── Init ──────────────────────────────────────────────────────────────────────
+# ── Init i migracja DB ────────────────────────────────────────────────────────
 
 def _create_default_admin():
     if not User.query.filter_by(username='admin').first():
@@ -350,9 +421,80 @@ def _seed_rss_config():
         db.session.commit()
 
 
+def _migrate_db():
+    """Migruje istniejącą bazę SQLite — dodaje brakujące kolumny i aktualizuje schemat."""
+    from sqlalchemy import text
+
+    def _get_cols(conn, table):
+        rows = conn.execute(text(f'PRAGMA table_info("{table}")')).fetchall()
+        return {row[1]: row for row in rows}  # name → (cid, name, type, notnull, dflt, pk)
+
+    with db.engine.begin() as conn:
+        tables = {r[0] for r in conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+
+        # rss_config: nowe kolumny
+        if 'rss_config' in tables:
+            cols = _get_cols(conn, 'rss_config')
+            if 'default_download_dir' not in cols:
+                conn.execute(text(
+                    'ALTER TABLE rss_config ADD COLUMN default_download_dir VARCHAR(500)'))
+                logger.info('DB migr: rss_config.default_download_dir')
+            if 'torrent_client' not in cols:
+                conn.execute(text(
+                    "ALTER TABLE rss_config ADD COLUMN torrent_client VARCHAR(50) DEFAULT 'transmission'"))
+                logger.info('DB migr: rss_config.torrent_client')
+
+        # watch_patterns: nowa kolumna server_id
+        if 'watch_patterns' in tables:
+            cols = _get_cols(conn, 'watch_patterns')
+            if 'server_id' not in cols:
+                conn.execute(text(
+                    'ALTER TABLE watch_patterns ADD COLUMN server_id INTEGER REFERENCES transmission_servers(id)'))
+                logger.info('DB migr: watch_patterns.server_id')
+
+        # downloads: server_id musi być nullable + nowe kolumny
+        if 'downloads' in tables:
+            cols = _get_cols(conn, 'downloads')
+            server_notnull = cols.get('server_id', (None, None, None, 0))[3]
+            need_save_path = 'save_path' not in cols
+            need_auto_dl   = 'auto_downloaded' not in cols
+
+            if server_notnull or need_save_path or need_auto_dl:
+                logger.info('DB migr: przebudowa tabeli downloads')
+                conn.execute(text("""
+                    CREATE TABLE downloads_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        rss_item_id INTEGER NOT NULL REFERENCES rss_items(id),
+                        server_id INTEGER REFERENCES transmission_servers(id),
+                        transmission_id INTEGER,
+                        transmission_hash VARCHAR(64),
+                        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                        error_message TEXT,
+                        progress FLOAT NOT NULL DEFAULT 0.0,
+                        save_path VARCHAR(500),
+                        auto_downloaded BOOLEAN NOT NULL DEFAULT 0,
+                        added_at DATETIME,
+                        updated_at DATETIME,
+                        completed_at DATETIME,
+                        added_by INTEGER REFERENCES users(id)
+                    )
+                """))
+                known = {'id', 'rss_item_id', 'server_id', 'transmission_id',
+                         'transmission_hash', 'status', 'error_message', 'progress',
+                         'added_at', 'updated_at', 'completed_at', 'added_by'}
+                copy_cols = ', '.join(sorted(set(cols.keys()) & known))
+                conn.execute(text(
+                    f'INSERT INTO downloads_new ({copy_cols}) SELECT {copy_cols} FROM downloads'))
+                conn.execute(text('DROP TABLE downloads'))
+                conn.execute(text('ALTER TABLE downloads_new RENAME TO downloads'))
+                logger.info('DB migr: tabela downloads zaktualizowana')
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+        _migrate_db()
         _create_default_admin()
         _seed_rss_config()
 

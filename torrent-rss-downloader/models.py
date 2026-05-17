@@ -20,11 +20,13 @@ class User(UserMixin, db.Model):
 class RssConfig(db.Model):
     __tablename__ = 'rss_config'
 
-    id            = db.Column(db.Integer, primary_key=True)
-    feed_url      = db.Column(db.String(1024), nullable=False, default='')
-    poll_interval = db.Column(db.Integer, nullable=False, default=15)
-    last_fetched  = db.Column(db.DateTime, nullable=True)
-    updated_at    = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id                   = db.Column(db.Integer, primary_key=True)
+    feed_url             = db.Column(db.String(1024), nullable=False, default='')
+    poll_interval        = db.Column(db.Integer, nullable=False, default=15)
+    last_fetched         = db.Column(db.DateTime, nullable=True)
+    updated_at           = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    default_download_dir = db.Column(db.String(500), nullable=True)
+    torrent_client       = db.Column(db.String(50), nullable=False, default='transmission')
 
 
 class RssItem(db.Model):
@@ -57,6 +59,23 @@ class RssItem(db.Model):
         return d.status if d else None
 
 
+class WatchPattern(db.Model):
+    """Wzorzec tytułu RSS do automatycznego pobierania."""
+    __tablename__ = 'watch_patterns'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    pattern    = db.Column(db.String(500), nullable=False)
+    dest_dir   = db.Column(db.String(500), nullable=True)
+    server_id  = db.Column(db.Integer, db.ForeignKey('transmission_servers.id'), nullable=True)
+    is_active  = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    server = db.relationship('TransmissionServer', foreign_keys=[server_id])
+
+    def __repr__(self):
+        return f'<WatchPattern {self.pattern}>'
+
+
 class TransmissionServer(db.Model):
     __tablename__ = 'transmission_servers'
 
@@ -81,16 +100,19 @@ class Download(db.Model):
     STATUS_DOWNLOADING = 'downloading'
     STATUS_SEEDING     = 'seeding'
     STATUS_COMPLETED   = 'completed'
+    STATUS_SAVED       = 'saved'
     STATUS_ERROR       = 'error'
 
     id                = db.Column(db.Integer, primary_key=True)
     rss_item_id       = db.Column(db.Integer, db.ForeignKey('rss_items.id'), nullable=False, index=True)
-    server_id         = db.Column(db.Integer, db.ForeignKey('transmission_servers.id'), nullable=False)
+    server_id         = db.Column(db.Integer, db.ForeignKey('transmission_servers.id'), nullable=True)
     transmission_id   = db.Column(db.Integer, nullable=True)
     transmission_hash = db.Column(db.String(64), nullable=True)
     status            = db.Column(db.String(32), nullable=False, default='pending', index=True)
     error_message     = db.Column(db.Text, nullable=True)
     progress          = db.Column(db.Float, nullable=False, default=0.0)
+    save_path         = db.Column(db.String(500), nullable=True)
+    auto_downloaded   = db.Column(db.Boolean, nullable=False, default=False)
     added_at          = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at        = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     completed_at      = db.Column(db.DateTime, nullable=True)
@@ -102,6 +124,7 @@ class Download(db.Model):
             'downloading': 'bg-primary',
             'seeding':     'bg-info text-dark',
             'completed':   'bg-success',
+            'saved':       'bg-success',
             'error':       'bg-danger',
         }.get(self.status, 'bg-secondary')
 
@@ -111,6 +134,7 @@ class Download(db.Model):
             'downloading': 'Pobieranie',
             'seeding':     'Seedowanie',
             'completed':   'Ukończono',
+            'saved':       'Zapisano',
             'error':       'Błąd',
         }.get(self.status, self.status)
 

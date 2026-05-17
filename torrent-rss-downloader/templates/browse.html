@@ -99,6 +99,10 @@
             {% if ds %}
               {% set dl = item.latest_download() %}
               <span class="badge {{ dl.status_badge_class() }}">{{ dl.status_label() }}</span>
+              {% if dl.auto_downloaded %}
+                <span class="badge bg-light text-dark border ms-1"
+                      title="Auto-pobrano wg wzorca"><i class="bi bi-robot"></i></span>
+              {% endif %}
             {% endif %}
           </td>
           <td class="text-end text-nowrap">

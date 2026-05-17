@@ -1,5 +1,8 @@
 import base64
 import logging
+import os
+import tempfile
+from pathlib import Path
 
 from transmission_rpc import Client
 from transmission_rpc.error import TransmissionError, TransmissionConnectError, TransmissionAuthError
@@ -29,10 +32,26 @@ def get_client(server) -> Client:
 
 
 def add_torrent_from_bytes(client: Client, torrent_bytes: bytes) -> tuple:
-    """Dodaje torrent z bytes. Zwraca (transmission_id, hash_string)."""
-    b64 = base64.b64encode(torrent_bytes).decode('ascii')
-    torrent = client.add_torrent(torrent=b64)
-    return torrent.id, torrent.hash_string
+    """Dodaje torrent z bytes. Zwraca (transmission_id, hash_string).
+
+    transmission-rpc v7 wysyła string jako 'filename' zamiast 'metainfo',
+    więc zapisujemy do pliku tymczasowego i przekazujemy Path — wtedy
+    biblioteka poprawnie koduje do base64 i używa pola 'metainfo'.
+    """
+    tmp = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(suffix='.torrent')
+        os.write(fd, torrent_bytes)
+        os.close(fd)
+        tmp = Path(tmp_path)
+        torrent = client.add_torrent(torrent=tmp)
+        return torrent.id, torrent.hash_string
+    finally:
+        if tmp is not None:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def get_torrent_status(client: Client, torrent_id: int) -> dict:
