@@ -26,8 +26,8 @@ Webowa aplikacja do monitorowania kanałów RSS i automatycznego pobierania torr
 ### 1. Sklonuj repozytorium
 
 ```bash
-git clone https://github.com/goof3r/claude-gof.git
-cd claude-gof/torrent-rss-downloader
+git clone https://github.com/goof3r/rpi5.git
+cd rpi5/torrent-rss-downloader
 ```
 
 ### 2. Utwórz plik konfiguracyjny
@@ -72,7 +72,7 @@ Domyślne dane logowania: **admin / admin** — zmień hasło po pierwszym logow
 ## Aktualizacja
 
 ```bash
-cd ~/claude-gof/torrent-rss-downloader
+cd ~/rpi5/torrent-rss-downloader
 bash update.sh
 ```
 
