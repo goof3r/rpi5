@@ -44,7 +44,7 @@ Uzupełnij wymagane wartości:
 SECRET_KEY=wklej-tutaj-losowy-klucz
 
 # Pełny URL Twojego kanału RSS
-RSS_FEED_URL=https://rss.pte.nu/TWOJ-TOKEN
+RSS_FEED_URL=https://rss.addres.your.tracker.com/TWOJ-TOKEN
 ```
 
 ### 3. Uruchom instalator
