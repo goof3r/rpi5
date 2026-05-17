@@ -1,25 +1,71 @@
 #!/usr/bin/env bash
 # Aktualizacja aplikacji do najnowszej wersji.
+# Działa zarówno po git clone jak i po ręcznym skopiowaniu plików.
 # Uruchom: bash update.sh
 set -e
 
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_NAME="torrent-rss"
+REPO_URL="https://github.com/goof3r/rpi5.git"
+REPO_SUBDIR="torrent-rss-downloader"
 
 echo "=== Torrent RSS Downloader — aktualizacja ==="
 cd "$APP_DIR"
 
-# ── Pobierz zmiany z repozytorium ────────────────────────────
-echo "[1/3] Pobieranie najnowszej wersji z git..."
-git pull
-echo "      ✓ Kod zaktualizowany"
+# ── Funkcja: szukaj katalogu głównego git w górę drzewa ──────
+find_git_root() {
+    local dir="$1"
+    while [ "$dir" != "/" ]; do
+        [ -d "$dir/.git" ] && echo "$dir" && return 0
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
 
-# ── Zaktualizuj zależności ────────────────────────────────────
+# ── Krok 1: pobierz nowe pliki ────────────────────────────────
+GIT_ROOT=$(find_git_root "$APP_DIR" || true)
+
+if [ -n "$GIT_ROOT" ]; then
+    echo "[1/3] Repozytorium git znalezione w: $GIT_ROOT"
+    echo "      Pobieranie zmian..."
+    cd "$GIT_ROOT"
+    git pull
+    cd "$APP_DIR"
+else
+    echo "[1/3] Brak lokalnego repozytorium git."
+    echo "      Pobieranie najnowszej wersji z GitHub..."
+
+    TMP_DIR=$(mktemp -d)
+    trap "rm -rf '$TMP_DIR'" EXIT
+
+    git clone --depth 1 --quiet "$REPO_URL" "$TMP_DIR"
+
+    # Zachowaj dane użytkownika przed nadpisaniem
+    [ -f "$APP_DIR/.env" ]        && cp "$APP_DIR/.env"        "$TMP_DIR/.env.bak"
+    [ -f "$APP_DIR/torrents.db" ] && cp "$APP_DIR/torrents.db" "$TMP_DIR/torrents.db.bak"
+
+    # Skopiuj nowe pliki (rsync zachowuje strukturę katalogów)
+    if command -v rsync &>/dev/null; then
+        rsync -a --exclude='.env' --exclude='torrents.db' --exclude='venv/' \
+            "$TMP_DIR/$REPO_SUBDIR/" "$APP_DIR/"
+    else
+        # Fallback bez rsync
+        cp -r "$TMP_DIR/$REPO_SUBDIR/." "$APP_DIR/"
+    fi
+
+    # Przywróć dane użytkownika
+    [ -f "$TMP_DIR/.env.bak" ]        && cp "$TMP_DIR/.env.bak"        "$APP_DIR/.env"
+    [ -f "$TMP_DIR/torrents.db.bak" ] && cp "$TMP_DIR/torrents.db.bak" "$APP_DIR/torrents.db"
+
+    echo "      ✓ Pliki zaktualizowane"
+fi
+
+# ── Krok 2: zaktualizuj zależności Python ─────────────────────
 echo "[2/3] Aktualizacja zależności Python..."
-./venv/bin/pip install -r requirements.txt -q
+"$APP_DIR/venv/bin/pip" install -r "$APP_DIR/requirements.txt" -q
 echo "      ✓ Zależności aktualne"
 
-# ── Restart usługi ────────────────────────────────────────────
+# ── Krok 3: restart usługi ────────────────────────────────────
 echo "[3/3] Restart usługi ${SERVICE_NAME}..."
 sudo systemctl restart "$SERVICE_NAME"
 sleep 2
