@@ -74,9 +74,10 @@ def browse():
     category = request.args.get('category', '').strip()
     language = request.args.get('language', '').strip()
     tag      = request.args.get('tag', '').strip()
+    source   = request.args.get('source', '').strip()
     page     = request.args.get('page', 1, type=int)
 
-    query = _build_rss_query(q, category, language, tag)
+    query = _build_rss_query(q, category, language, tag, source)
     pagination = query.paginate(page=page, per_page=25, error_out=False)
 
     categories = [r[0] for r in db.session.query(RssItem.category)
@@ -85,17 +86,20 @@ def browse():
     languages  = [r[0] for r in db.session.query(RssItem.language)
                   .filter(RssItem.language.isnot(None))
                   .distinct().order_by(RssItem.language).all()]
+    sources    = [r[0] for r in db.session.query(RssItem.source)
+                  .filter(RssItem.source.isnot(None))
+                  .distinct().order_by(RssItem.source).all()]
     servers    = TransmissionServer.query.filter_by(is_active=True).all()
 
     return render_template('browse.html',
                            pagination=pagination,
                            items=pagination.items,
-                           q=q, category=category, language=language, tag=tag,
-                           categories=categories, languages=languages,
+                           q=q, category=category, language=language, tag=tag, source=source,
+                           categories=categories, languages=languages, sources=sources,
                            servers=servers)
 
 
-def _build_rss_query(q, category, language, tag):
+def _build_rss_query(q, category, language, tag, source=''):
     from rss_fetcher import translate_wildcard
     query = RssItem.query.order_by(RssItem.pub_date.desc().nullslast(), RssItem.fetched_at.desc())
 
@@ -108,6 +112,8 @@ def _build_rss_query(q, category, language, tag):
         query = query.filter(RssItem.language == language)
     if tag:
         query = query.filter(RssItem.tags.ilike(f'%{tag}%'))
+    if source:
+        query = query.filter(RssItem.source == source)
 
     return query
 
@@ -478,6 +484,14 @@ def _migrate_db():
                 conn.execute(text(
                     'ALTER TABLE rss_config ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1'))
                 logger.info('DB migr: rss_config.is_active')
+
+        # rss_items: kolumna source (tracker)
+        if 'rss_items' in tables:
+            cols = _get_cols(conn, 'rss_items')
+            if 'source' not in cols:
+                conn.execute(text(
+                    'ALTER TABLE rss_items ADD COLUMN source VARCHAR(128)'))
+                logger.info('DB migr: rss_items.source')
 
         # watch_patterns: nowa kolumna server_id
         if 'watch_patterns' in tables:

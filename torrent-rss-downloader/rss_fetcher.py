@@ -46,7 +46,7 @@ def fetch_and_store(app) -> dict:
 
             for entry in entries:
                 try:
-                    result = _upsert_item(entry)
+                    result = _upsert_item(entry, source=label)
                     counts[result] += 1
                 except Exception as e:
                     logger.error('Błąd zapisu wpisu RSS "%s": %s', entry.get('title', '?'), e)
@@ -120,7 +120,7 @@ def _get_extra(entry, field: str):
     return None
 
 
-def _upsert_item(entry: dict) -> str:
+def _upsert_item(entry: dict, source: str = None) -> str:
     from models import db, RssItem
 
     existing = RssItem.query.filter_by(guid=entry['guid']).first()
@@ -130,6 +130,7 @@ def _upsert_item(entry: dict) -> str:
     item = RssItem(
         guid=entry['guid'],
         title=entry['title'],
+        source=source or None,
         category=entry.get('category') or None,
         pub_date=entry.get('pub_date'),
         description=entry.get('description') or None,

@@ -11,9 +11,17 @@
 <div class="card mb-3">
   <div class="card-body py-2">
     <form method="GET" action="{{ url_for('browse') }}" class="row g-2 align-items-end">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm"
                placeholder="Szukaj… użyj %% jako wildcard" />
+      </div>
+      <div class="col-md-2">
+        <select name="source" class="form-select form-select-sm">
+          <option value="">Wszystkie trackery</option>
+          {% for src in sources %}
+            <option value="{{ src }}" {% if source == src %}selected{% endif %}>{{ src }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-2">
         <select name="category" class="form-select form-select-sm">
@@ -23,9 +31,9 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-2">
+      <div class="col-md-1">
         <select name="language" class="form-select form-select-sm">
-          <option value="">Wszystkie języki</option>
+          <option value="">Język</option>
           {% for lang in languages %}
             <option value="{{ lang }}" {% if language == lang %}selected{% endif %}>{{ lang }}</option>
           {% endfor %}
@@ -55,6 +63,7 @@
       <thead>
         <tr>
           <th>Tytuł</th>
+          <th class="text-nowrap">Tracker</th>
           <th class="text-nowrap">Kategoria</th>
           <th>Język</th>
           <th>Tagi</th>
@@ -74,6 +83,12 @@
             {% if item.description and item.description != item.title %}
               <br><small class="text-muted">{{ item.description[:60] }}</small>
             {% endif %}
+          </td>
+          <td class="text-nowrap">
+            {% if item.source %}
+              <a href="{{ url_for('browse', source=item.source) }}"
+                 class="badge bg-dark text-decoration-none">{{ item.source }}</a>
+            {% else %}—{% endif %}
           </td>
           <td class="text-nowrap">
             {% if item.category %}
@@ -125,7 +140,7 @@
   <ul class="pagination pagination-sm justify-content-center mb-0">
     {% if pagination.has_prev %}
       <li class="page-item">
-        <a class="page-link" href="{{ url_for('browse', q=q, category=category, language=language, tag=tag, page=pagination.prev_num) }}">
+        <a class="page-link" href="{{ url_for('browse', q=q, category=category, language=language, tag=tag, source=source, page=pagination.prev_num) }}">
           <i class="bi bi-chevron-left"></i>
         </a>
       </li>
@@ -133,7 +148,7 @@
     {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
       {% if p %}
         <li class="page-item {% if p == pagination.page %}active{% endif %}">
-          <a class="page-link" href="{{ url_for('browse', q=q, category=category, language=language, tag=tag, page=p) }}">{{ p }}</a>
+          <a class="page-link" href="{{ url_for('browse', q=q, category=category, language=language, tag=tag, source=source, page=p) }}">{{ p }}</a>
         </li>
       {% else %}
         <li class="page-item disabled"><span class="page-link">…</span></li>
@@ -141,7 +156,7 @@
     {% endfor %}
     {% if pagination.has_next %}
       <li class="page-item">
-        <a class="page-link" href="{{ url_for('browse', q=q, category=category, language=language, tag=tag, page=pagination.next_num) }}">
+        <a class="page-link" href="{{ url_for('browse', q=q, category=category, language=language, tag=tag, source=source, page=pagination.next_num) }}">
           <i class="bi bi-chevron-right"></i>
         </a>
       </li>

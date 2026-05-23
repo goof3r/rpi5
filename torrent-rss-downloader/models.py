@@ -37,6 +37,7 @@ class RssItem(db.Model):
     id          = db.Column(db.Integer, primary_key=True)
     guid        = db.Column(db.String(512), unique=True, nullable=False, index=True)
     title       = db.Column(db.String(512), nullable=False, index=True)
+    source      = db.Column(db.String(128), nullable=True, index=True)
     category    = db.Column(db.String(128), nullable=True, index=True)
     pub_date    = db.Column(db.DateTime, nullable=True)
     description = db.Column(db.Text, nullable=True)

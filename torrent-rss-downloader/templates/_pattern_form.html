@@ -1,0 +1,20 @@
+<div class="mb-3">
+  <label class="form-label">Wzorzec tytułu <span class="text-danger">*</span></label>
+  <input type="text" name="pattern" class="form-control font-monospace"
+         placeholder="np. Vabank%1080p lub Serial.S01%" required />
+  <div class="form-text">Użyj <code>%</code> jako wildcard (dowolny ciąg znaków).</div>
+</div>
+<div class="mb-3">
+  <label class="form-label">Serwer Transmission</label>
+  <select name="server_id" class="form-select">
+    <option value="">— domyślny (pierwszy aktywny) —</option>
+    {% for s in servers %}
+      <option value="{{ s.id }}">{{ s.name }} ({{ s.host }})</option>
+    {% endfor %}
+  </select>
+</div>
+<div class="mb-3">
+  <label class="form-label">Folder docelowy</label>
+  <input type="text" name="dest_dir" class="form-control"
+         placeholder="/mnt/nas/torrents (puste = domyślny)" />
+</div>
