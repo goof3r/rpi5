@@ -3,10 +3,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///torrents.db'
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(_BASE_DIR, 'torrents.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = True
     RSS_FEED_URL = os.environ.get('RSS_FEED_URL', '')
