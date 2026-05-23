@@ -21,8 +21,10 @@ class RssConfig(db.Model):
     __tablename__ = 'rss_config'
 
     id                   = db.Column(db.Integer, primary_key=True)
+    name                 = db.Column(db.String(128), nullable=False, default='')
     feed_url             = db.Column(db.String(1024), nullable=False, default='')
     poll_interval        = db.Column(db.Integer, nullable=False, default=15)
+    is_active            = db.Column(db.Boolean, nullable=False, default=True)
     last_fetched         = db.Column(db.DateTime, nullable=True)
     updated_at           = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     default_download_dir = db.Column(db.String(500), nullable=True)

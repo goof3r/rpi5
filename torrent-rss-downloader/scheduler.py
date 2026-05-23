@@ -13,16 +13,9 @@ scheduler = BackgroundScheduler(
 
 
 def init_scheduler(app):
-    from models import RssConfig
-    from config import Config
-
-    with app.app_context():
-        config = RssConfig.query.first()
-        interval = config.poll_interval if config else Config.RSS_POLL_INTERVAL
-
     scheduler.add_job(
         func=_rss_poll_job,
-        trigger=IntervalTrigger(minutes=interval),
+        trigger=IntervalTrigger(minutes=1),
         id='rss_poll',
         args=[app],
         replace_existing=True,
@@ -37,12 +30,7 @@ def init_scheduler(app):
 
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
-    logger.info('Scheduler uruchomiony (RSS co %d min, sync pobrań co 2 min)', interval)
-
-
-def reschedule_rss(minutes: int):
-    scheduler.reschedule_job('rss_poll', trigger=IntervalTrigger(minutes=minutes))
-    logger.info('RSS poll zmieniony na co %d min', minutes)
+    logger.info('Scheduler uruchomiony (RSS check co 1 min, sync pobrań co 2 min)')
 
 
 def _rss_poll_job(app):

@@ -128,42 +128,67 @@ def queue():
 @app.route('/settings')
 @login_required
 def settings():
-    rss_config = RssConfig.query.first()
-    servers    = TransmissionServer.query.order_by(TransmissionServer.name).all()
-    patterns   = WatchPattern.query.order_by(WatchPattern.id).all()
-    return render_template('settings.html', rss_config=rss_config,
+    rss_configs = RssConfig.query.order_by(RssConfig.id).all()
+    servers     = TransmissionServer.query.order_by(TransmissionServer.name).all()
+    patterns    = WatchPattern.query.order_by(WatchPattern.id).all()
+    return render_template('settings.html', rss_configs=rss_configs,
                            servers=servers, patterns=patterns)
 
 
-@app.route('/settings/rss', methods=['POST'])
+@app.route('/settings/rss/add', methods=['POST'])
 @login_required
-def settings_rss():
-    feed_url             = request.form.get('feed_url', '').strip()
-    poll_interval        = int(request.form.get('poll_interval', 15))
-    poll_interval        = max(1, min(poll_interval, 1440))
-    default_download_dir = request.form.get('default_download_dir', '').strip() or None
-    torrent_client       = request.form.get('torrent_client', 'transmission')
+def rss_add():
+    name          = request.form.get('name', '').strip()
+    feed_url      = request.form.get('feed_url', '').strip()
+    poll_interval = max(1, min(int(request.form.get('poll_interval', 15)), 1440))
+    torrent_client = request.form.get('torrent_client', 'transmission')
     if torrent_client not in ('transmission', 'wget', 'auto'):
         torrent_client = 'transmission'
-
-    config = RssConfig.query.first()
-    if not config:
-        config = RssConfig()
-        db.session.add(config)
-    config.feed_url             = feed_url
-    config.poll_interval        = poll_interval
-    config.default_download_dir = default_download_dir
-    config.torrent_client       = torrent_client
-    config.updated_at           = datetime.utcnow()
+    if not feed_url:
+        flash('URL kanału RSS jest wymagany.', 'danger')
+        return redirect(url_for('settings'))
+    config = RssConfig(name=name, feed_url=feed_url, poll_interval=poll_interval,
+                       torrent_client=torrent_client, is_active=True)
+    db.session.add(config)
     db.session.commit()
+    flash(f'Kanał „{name or feed_url}" dodany.', 'success')
+    return redirect(url_for('settings'))
 
-    try:
-        from scheduler import reschedule_rss
-        reschedule_rss(poll_interval)
-    except Exception:
-        pass
 
-    flash('Konfiguracja RSS zapisana.', 'success')
+@app.route('/settings/rss/<int:cid>/edit', methods=['POST'])
+@login_required
+def rss_edit(cid):
+    config = RssConfig.query.get_or_404(cid)
+    config.name          = request.form.get('name', '').strip()
+    config.feed_url      = request.form.get('feed_url', '').strip()
+    config.poll_interval = max(1, min(int(request.form.get('poll_interval', 15)), 1440))
+    torrent_client       = request.form.get('torrent_client', 'transmission')
+    config.torrent_client = torrent_client if torrent_client in ('transmission', 'wget', 'auto') else 'transmission'
+    config.updated_at    = datetime.utcnow()
+    db.session.commit()
+    flash(f'Kanał „{config.name or config.feed_url}" zaktualizowany.', 'success')
+    return redirect(url_for('settings'))
+
+
+@app.route('/settings/rss/<int:cid>/delete', methods=['POST'])
+@login_required
+def rss_delete(cid):
+    config = RssConfig.query.get_or_404(cid)
+    name = config.name or config.feed_url
+    db.session.delete(config)
+    db.session.commit()
+    flash(f'Kanał „{name}" usunięty.', 'success')
+    return redirect(url_for('settings'))
+
+
+@app.route('/settings/rss/<int:cid>/toggle', methods=['POST'])
+@login_required
+def rss_toggle(cid):
+    config = RssConfig.query.get_or_404(cid)
+    config.is_active = not config.is_active
+    db.session.commit()
+    state = 'włączony' if config.is_active else 'wyłączony'
+    flash(f'Kanał „{config.name or config.feed_url}" {state}.', 'success')
     return redirect(url_for('settings'))
 
 
@@ -417,7 +442,8 @@ def _seed_rss_config():
     if not RssConfig.query.first():
         feed_url = app.config.get('RSS_FEED_URL', '')
         interval = app.config.get('RSS_POLL_INTERVAL', 15)
-        db.session.add(RssConfig(feed_url=feed_url, poll_interval=interval))
+        db.session.add(RssConfig(name='Domyślny', feed_url=feed_url,
+                                 poll_interval=interval, is_active=True))
         db.session.commit()
 
 
@@ -444,6 +470,14 @@ def _migrate_db():
                 conn.execute(text(
                     "ALTER TABLE rss_config ADD COLUMN torrent_client VARCHAR(50) DEFAULT 'transmission'"))
                 logger.info('DB migr: rss_config.torrent_client')
+            if 'name' not in cols:
+                conn.execute(text(
+                    "ALTER TABLE rss_config ADD COLUMN name VARCHAR(128) NOT NULL DEFAULT ''"))
+                logger.info('DB migr: rss_config.name')
+            if 'is_active' not in cols:
+                conn.execute(text(
+                    'ALTER TABLE rss_config ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1'))
+                logger.info('DB migr: rss_config.is_active')
 
         # watch_patterns: nowa kolumna server_id
         if 'watch_patterns' in tables:

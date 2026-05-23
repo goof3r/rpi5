@@ -14,41 +14,58 @@ logger = logging.getLogger(__name__)
 
 def fetch_and_store(app) -> dict:
     """Główna funkcja pollingu RSS — wywołana przez scheduler."""
+    from datetime import timedelta
     with app.app_context():
-        from models import db, RssConfig, RssItem
+        from models import db, RssConfig
 
-        config = RssConfig.query.first()
-        if not config or not config.feed_url:
-            logger.warning('Brak URL RSS w konfiguracji — pomijam polling')
+        feeds = RssConfig.query.filter_by(is_active=True).all()
+        if not feeds:
+            logger.warning('Brak aktywnych kanałów RSS — pomijam polling')
             return {'new': 0, 'skipped': 0, 'errors': 0}
 
-        counts = {'new': 0, 'skipped': 0, 'errors': 0}
-        try:
-            entries = _fetch_feed(config.feed_url)
-        except Exception as e:
-            logger.error('Błąd pobierania RSS: %s', e)
-            counts['errors'] += 1
-            return counts
+        now = datetime.utcnow()
+        total = {'new': 0, 'skipped': 0, 'errors': 0}
 
-        for entry in entries:
+        for config in feeds:
+            if not config.feed_url:
+                continue
+            if config.last_fetched:
+                if now < config.last_fetched + timedelta(minutes=config.poll_interval):
+                    continue
+
+            label = config.name or config.feed_url
+            counts = {'new': 0, 'skipped': 0, 'errors': 0}
             try:
-                result = _upsert_item(entry)
-                counts[result] += 1
+                entries = _fetch_feed(config.feed_url)
             except Exception as e:
-                logger.error('Błąd zapisu wpisu RSS "%s": %s', entry.get('title', '?'), e)
+                logger.error('Błąd pobierania RSS [%s]: %s', label, e)
                 counts['errors'] += 1
+                for k in total:
+                    total[k] += counts[k]
+                continue
+
+            for entry in entries:
+                try:
+                    result = _upsert_item(entry)
+                    counts[result] += 1
+                except Exception as e:
+                    logger.error('Błąd zapisu wpisu RSS "%s": %s', entry.get('title', '?'), e)
+                    counts['errors'] += 1
+                    db.session.rollback()
+
+            try:
+                config.last_fetched = now
+                db.session.commit()
+            except Exception as e:
+                logger.error('Błąd commit RSS [%s]: %s', label, e)
                 db.session.rollback()
 
-        try:
-            config.last_fetched = datetime.utcnow()
-            db.session.commit()
-        except Exception as e:
-            logger.error('Błąd commit RSS: %s', e)
-            db.session.rollback()
+            logger.info('RSS poll [%s]: nowe=%d, pominięte=%d, błędy=%d',
+                        label, counts['new'], counts['skipped'], counts['errors'])
+            for k in total:
+                total[k] += counts[k]
 
-        logger.info('RSS poll: nowe=%d, pominięte=%d, błędy=%d',
-                    counts['new'], counts['skipped'], counts['errors'])
-        return counts
+        return total
 
 
 def _fetch_feed(url: str) -> list:
@@ -150,7 +167,7 @@ def auto_download_matching(app) -> int:
     with app.app_context():
         from models import db, RssConfig, RssItem, WatchPattern, Download
 
-        config = RssConfig.query.first()
+        config = RssConfig.query.filter_by(is_active=True).first()
         if not config:
             return 0
 

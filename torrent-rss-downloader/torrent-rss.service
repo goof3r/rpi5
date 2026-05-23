@@ -1,0 +1,14 @@
+[Unit]
+Description=Torrent RSS Downloader
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/rpi5/torrent-rss-downloader
+ExecStart=/home/pi/rpi5/torrent-rss-downloader/venv/bin/python app.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

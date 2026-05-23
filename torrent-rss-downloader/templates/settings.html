@@ -4,121 +4,51 @@
 {% block content %}
 <h5 class="mb-4"><i class="bi bi-gear me-2 text-warning"></i>Ustawienia</h5>
 
-<!-- ── Karta RSS ──────────────────────────────────────────────── -->
-<div class="card mb-4">
-  <div class="card-header fw-semibold">
-    <i class="bi bi-rss me-2 text-warning"></i>Kanał RSS
-  </div>
-  <div class="card-body">
-    <form method="POST" action="{{ url_for('settings_rss') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-      <div class="row g-3">
-        <div class="col-md-8">
-          <label class="form-label">URL kanału RSS</label>
-          <input type="url" name="feed_url" class="form-control"
-                 value="{{ rss_config.feed_url if rss_config else '' }}"
-                 placeholder="https://pte.nu/rss/TWOJ_TOKEN.xml" required />
-        </div>
-        <div class="col-md-2">
-          <label class="form-label">Interwał (minuty)</label>
-          <input type="number" name="poll_interval" class="form-control" min="1" max="1440"
-                 value="{{ rss_config.poll_interval if rss_config else 15 }}" />
-        </div>
-        <div class="col-md-2 d-flex align-items-end gap-2">
-          <button type="submit" class="btn btn-warning">
-            <i class="bi bi-save me-1"></i>Zapisz
-          </button>
-          <button type="button" class="btn btn-outline-secondary" onclick="pollNow()" title="Odśwież teraz">
-            <i class="bi bi-arrow-repeat"></i>
-          </button>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">Domyślny folder pobrań</label>
-          <input type="text" name="default_download_dir" class="form-control"
-                 value="{{ rss_config.default_download_dir if rss_config and rss_config.default_download_dir else '' }}"
-                 placeholder="/home/user/Downloads/torrents" />
-          <div class="form-text">Używany przez auto-pobieranie gdy wzorzec nie ma własnego folderu.</div>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Klient torrent (auto-pobieranie)</label>
-          <select name="torrent_client" class="form-select">
-            <option value="transmission"
-              {% if not rss_config or rss_config.torrent_client == 'transmission' %}selected{% endif %}>
-              Transmission (RPC)
-            </option>
-            <option value="wget"
-              {% if rss_config and rss_config.torrent_client == 'wget' %}selected{% endif %}>
-              Plik .torrent (wget)
-            </option>
-            <option value="auto"
-              {% if rss_config and rss_config.torrent_client == 'auto' %}selected{% endif %}>
-              Auto (Transmission → plik)
-            </option>
-          </select>
-          <div class="form-text">
-            <b>wget</b> – zapisuje plik .torrent do folderu (dla klientów z watch folder).
-          </div>
-        </div>
-      </div>
-    </form>
-    {% if rss_config and rss_config.last_fetched %}
-      <p class="text-muted small mt-2 mb-0">
-        Ostatnie pobranie: {{ rss_config.last_fetched.strftime('%d.%m.%Y %H:%M:%S') }} UTC
-      </p>
-    {% endif %}
-  </div>
-</div>
-
-<!-- ── Karta wzorców auto-pobierania ─────────────────────────── -->
+<!-- ── Karta kanałów RSS ───────────────────────────────────────── -->
 <div class="card mb-4">
   <div class="card-header d-flex align-items-center justify-content-between">
-    <span class="fw-semibold">
-      <i class="bi bi-robot me-2 text-warning"></i>Wzorce auto-pobierania
-    </span>
-    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#addPatternModal">
-      <i class="bi bi-plus-lg me-1"></i>Dodaj wzorzec
-    </button>
-  </div>
-  <div class="card-body {% if patterns %}p-0{% endif %}">
-    {% if not patterns %}
-    <p class="text-muted small mb-2">
-      Wstawki RSS pasujące do wzorca są automatycznie pobierane po każdym odświeżeniu kanału RSS.
-      Użyj <code>%</code> jako symbolu zastępczego dowolnej liczby znaków
-      (np. <code>Zuzel.PGE.Ekstraliga.2026.05%</code> dopasuje wszystkie mecze z maja 2026).
-    </p>
-    <div class="text-center text-muted py-3">
-      <i class="bi bi-robot display-5 d-block mb-2 opacity-25"></i>
-      <p class="mb-0">Brak wzorców. Dodaj pierwszy wzorzec aby włączyć auto-pobieranie.</p>
+    <span class="fw-semibold"><i class="bi bi-rss me-2 text-warning"></i>Kanały RSS</span>
+    <div class="d-flex gap-2">
+      <button class="btn btn-outline-secondary btn-sm" onclick="pollNow()">
+        <i class="bi bi-arrow-repeat me-1"></i>Pobierz teraz
+      </button>
+      <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#addFeedModal">
+        <i class="bi bi-plus-lg me-1"></i>Dodaj kanał
+      </button>
     </div>
-    {% else %}
+  </div>
+  <div class="card-body p-0">
+    {% if rss_configs %}
     <div class="table-responsive">
       <table class="table table-hover table-sm mb-0">
         <thead>
           <tr>
-            <th>Wzorzec</th>
-            <th>Serwer</th>
-            <th>Folder docelowy</th>
+            <th>Nazwa</th>
+            <th>URL</th>
+            <th>Interwał</th>
+            <th>Klient</th>
+            <th>Ostatnie pobranie</th>
             <th>Aktywny</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {% for p in patterns %}
+          {% for c in rss_configs %}
           <tr>
-            <td class="fw-medium font-monospace small">{{ p.pattern }}</td>
-            <td class="text-nowrap small">
-              {% if p.server %}
-                <span class="badge bg-secondary">{{ p.server.name }}</span>
-              {% else %}
-                <span class="text-muted">— (auto)</span>
-              {% endif %}
+            <td class="fw-medium">{{ c.name or '—' }}</td>
+            <td class="text-muted" style="max-width:260px;">
+              <small class="text-break">{{ c.feed_url[:60] }}{% if c.feed_url|length > 60 %}…{% endif %}</small>
             </td>
-            <td class="text-muted small">{{ p.dest_dir or '— (domyślny)' }}</td>
+            <td class="text-muted text-nowrap">{{ c.poll_interval }} min</td>
+            <td class="text-muted">{{ c.torrent_client }}</td>
+            <td class="text-muted small text-nowrap">
+              {% if c.last_fetched %}{{ c.last_fetched.strftime('%d.%m.%Y %H:%M') }}{% else %}—{% endif %}
+            </td>
             <td>
-              <form method="POST" action="{{ url_for('pattern_toggle', pid=p.id) }}" class="d-inline">
+              <form method="POST" action="{{ url_for('rss_toggle', cid=c.id) }}" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <button type="submit" class="btn btn-sm p-0 border-0 bg-transparent">
-                  {% if p.is_active %}
+                  {% if c.is_active %}
                     <i class="bi bi-toggle-on text-success fs-5"></i>
                   {% else %}
                     <i class="bi bi-toggle-off text-secondary fs-5"></i>
@@ -127,18 +57,14 @@
               </form>
             </td>
             <td class="text-end text-nowrap">
-              <button class="btn btn-outline-secondary btn-sm" title="Edytuj"
-                      onclick="openEditPatternModal(
-                        {{ p.id }},
-                        '{{ p.pattern | replace("'", "\\'") }}',
-                        '{{ p.dest_dir or '' }}',
-                        {{ p.server_id or 'null' }})">
+              <button class="btn btn-outline-secondary btn-sm"
+                      onclick="openEditFeedModal({{ c.id }}, '{{ c.name|e }}', '{{ c.feed_url|e }}', {{ c.poll_interval }}, '{{ c.torrent_client }}')">
                 <i class="bi bi-pencil"></i>
               </button>
-              <form method="POST" action="{{ url_for('pattern_delete', pid=p.id) }}" class="d-inline"
-                    onsubmit="return confirm('Usunąć wzorzec?')">
+              <form method="POST" action="{{ url_for('rss_delete', cid=c.id) }}" class="d-inline"
+                    onsubmit="return confirm('Usunąć kanał &quot;{{ c.name or c.feed_url }}&quot;?')">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                <button type="submit" class="btn btn-outline-danger btn-sm" title="Usuń">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
                   <i class="bi bi-trash"></i>
                 </button>
               </form>
@@ -147,6 +73,11 @@
           {% endfor %}
         </tbody>
       </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-rss display-5 d-block mb-2"></i>
+      <p class="mb-0">Brak kanałów RSS. Dodaj pierwszy kanał.</p>
     </div>
     {% endif %}
   </div>
@@ -252,94 +183,40 @@
   </div>
 </div>
 
-<!-- Modal: Dodaj wzorzec -->
-<div class="modal fade" id="addPatternModal" tabindex="-1">
+<!-- Modal: Dodaj kanał RSS -->
+<div class="modal fade" id="addFeedModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form method="POST" action="{{ url_for('pattern_add') }}">
+      <form method="POST" action="{{ url_for('rss_add') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="modal-header">
-          <h5 class="modal-title">
-            <i class="bi bi-plus-circle me-2 text-warning"></i>Dodaj wzorzec auto-pobierania
-          </h5>
+          <h5 class="modal-title"><i class="bi bi-plus-circle me-2 text-warning"></i>Dodaj kanał RSS</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Wzorzec tytułu <span class="text-danger">*</span></label>
-            <input type="text" name="pattern" class="form-control font-monospace"
-                   placeholder="Nemesis.2026.S01E%%.DV.2160p.WEB.h265-GRACE" required />
-            <div class="form-text">
-              Użyj <code>%</code> jako symbolu zastępczego dowolnej liczby znaków.
-              Np. <code>Zuzel.PGE.Ekstraliga.2026.05%</code> dopasuje wszystkie mecze z maja 2026.
-            </div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Serwer Transmission</label>
-            <select name="server_id" class="form-select">
-              <option value="">— automatyczny (pierwszy aktywny) —</option>
-              {% for s in servers %}
-                <option value="{{ s.id }}">{{ s.name }} ({{ s.host }}:{{ s.port }})</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">
-              Dotyczy tylko trybu <b>Transmission</b>. Przy <b>wget</b> plik trafia do folderu docelowego.
-            </div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Folder docelowy</label>
-            <input type="text" name="dest_dir" class="form-control"
-                   placeholder="{{ rss_config.default_download_dir or '/home/user/Downloads' }}" />
-            <div class="form-text">Pozostaw puste aby użyć domyślnego folderu z konfiguracji RSS.</div>
-          </div>
+          {% include '_feed_form.html' %}
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
-          <button type="submit" class="btn btn-warning">Dodaj wzorzec</button>
+          <button type="submit" class="btn btn-warning">Dodaj</button>
         </div>
       </form>
     </div>
   </div>
 </div>
 
-<!-- Modal: Edytuj wzorzec -->
-<div class="modal fade" id="editPatternModal" tabindex="-1">
+<!-- Modal: Edytuj kanał RSS -->
+<div class="modal fade" id="editFeedModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form method="POST" id="editPatternForm">
+      <form method="POST" id="editFeedForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="modal-header">
-          <h5 class="modal-title">
-            <i class="bi bi-pencil me-2 text-warning"></i>Edytuj wzorzec
-          </h5>
+          <h5 class="modal-title"><i class="bi bi-pencil me-2 text-warning"></i>Edytuj kanał RSS</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Wzorzec tytułu <span class="text-danger">*</span></label>
-            <input type="text" name="pattern" class="form-control font-monospace" required />
-            <div class="form-text">
-              Użyj <code>%</code> jako symbolu zastępczego dowolnej liczby znaków.
-            </div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Serwer Transmission</label>
-            <select name="server_id" class="form-select">
-              <option value="">— automatyczny (pierwszy aktywny) —</option>
-              {% for s in servers %}
-                <option value="{{ s.id }}">{{ s.name }} ({{ s.host }}:{{ s.port }})</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">
-              Dotyczy tylko trybu <b>Transmission</b>. Przy <b>wget</b> plik trafia do folderu docelowego.
-            </div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Folder docelowy</label>
-            <input type="text" name="dest_dir" class="form-control"
-                   placeholder="{{ rss_config.default_download_dir or '/home/user/Downloads' }}" />
-            <div class="form-text">Pozostaw puste aby użyć domyślnego folderu z konfiguracji RSS.</div>
-          </div>
+          {% include '_feed_form.html' %}
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
@@ -405,12 +282,8 @@ function pollNow() {
   })
   .then(r => r.json())
   .then(d => {
-    if (d.ok) {
-      const auto = d.auto_downloaded ? `, auto=${d.auto_downloaded}` : '';
-      showToast(`RSS: nowe=${d.new}, pominięte=${d.skipped}, błędy=${d.errors}${auto}`, 'success');
-    } else {
-      showToast('Błąd: ' + (d.error || '?'), 'danger');
-    }
+    if (d.ok) showToast(`RSS: nowe=${d.new}, pominięte=${d.skipped}, błędy=${d.errors}`, 'success');
+    else showToast('Błąd: ' + (d.error || '?'), 'danger');
   })
   .catch(() => showToast('Błąd sieci', 'danger'));
 }
@@ -426,19 +299,8 @@ function testServer(sid, name) {
   .catch(() => showToast('Błąd sieci', 'danger'));
 }
 
-const _editPatternModal = new bootstrap.Modal(document.getElementById('editPatternModal'));
-
-function openEditPatternModal(pid, pattern, destDir, serverId) {
-  const form = document.getElementById('editPatternForm');
-  form.action = `/settings/patterns/${pid}/edit`;
-  form.querySelector('[name="pattern"]').value  = pattern;
-  form.querySelector('[name="dest_dir"]').value = destDir || '';
-  const sel = form.querySelector('[name="server_id"]');
-  sel.value = serverId !== null ? String(serverId) : '';
-  _editPatternModal.show();
-}
-
-const _editModal = new bootstrap.Modal(document.getElementById('editServerModal'));
+const _editServerModal = new bootstrap.Modal(document.getElementById('editServerModal'));
+const _editFeedModal   = new bootstrap.Modal(document.getElementById('editFeedModal'));
 
 function openEditModal(sid, name, host, port, username, basePath) {
   const form = document.getElementById('editServerForm');
@@ -449,7 +311,17 @@ function openEditModal(sid, name, host, port, username, basePath) {
   form.querySelector('[name="username"]').value  = username;
   form.querySelector('[name="base_path"]').value = basePath;
   form.querySelector('[name="password"]').value  = '';
-  _editModal.show();
+  _editServerModal.show();
+}
+
+function openEditFeedModal(cid, name, feedUrl, pollInterval, torrentClient) {
+  const form = document.getElementById('editFeedForm');
+  form.action = `/settings/rss/${cid}/edit`;
+  form.querySelector('[name="name"]').value           = name;
+  form.querySelector('[name="feed_url"]').value       = feedUrl;
+  form.querySelector('[name="poll_interval"]').value  = pollInterval;
+  form.querySelector('[name="torrent_client"]').value = torrentClient;
+  _editFeedModal.show();
 }
 </script>
 {% endblock %}

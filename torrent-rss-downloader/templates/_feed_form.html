@@ -1,0 +1,23 @@
+<div class="mb-3">
+  <label class="form-label">Nazwa</label>
+  <input type="text" name="name" class="form-control" placeholder="np. pte.nu filmy" />
+</div>
+<div class="mb-3">
+  <label class="form-label">URL kanału RSS <span class="text-danger">*</span></label>
+  <input type="url" name="feed_url" class="form-control"
+         placeholder="https://pte.nu/rss/TWOJ_TOKEN.xml" required />
+</div>
+<div class="row g-3">
+  <div class="col-6">
+    <label class="form-label">Interwał (minuty)</label>
+    <input type="number" name="poll_interval" class="form-control" value="15" min="1" max="1440" />
+  </div>
+  <div class="col-6">
+    <label class="form-label">Klient torrent</label>
+    <select name="torrent_client" class="form-select">
+      <option value="transmission">Transmission</option>
+      <option value="wget">Plik na dysk</option>
+      <option value="auto">Auto (Transmission → dysk)</option>
+    </select>
+  </div>
+</div>
