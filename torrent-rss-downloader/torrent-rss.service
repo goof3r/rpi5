@@ -6,6 +6,8 @@ After=network.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/rpi5/torrent-rss-downloader
+EnvironmentFile=/home/pi/rpi5/torrent-rss-downloader/.env
+Environment=DATA_DIR=/var/lib/torrent-rss
 ExecStart=/home/pi/rpi5/torrent-rss-downloader/venv/bin/python app.py
 Restart=on-failure
 RestartSec=10

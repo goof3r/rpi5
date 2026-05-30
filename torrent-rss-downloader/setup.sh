@@ -8,13 +8,27 @@ APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_NAME="torrent-rss"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 RUN_USER="$(whoami)"
+DATA_DIR="/var/lib/torrent-rss"
 
 echo "=== Torrent RSS Downloader — instalacja ==="
 echo "Katalog: $APP_DIR"
 echo "Użytkownik: $RUN_USER"
+echo "Dane: $DATA_DIR"
 echo ""
 
 cd "$APP_DIR"
+
+# ── Katalog danych (baza SQLite) ──────────────────────────────
+echo "[0/4] Tworzenie katalogu danych: $DATA_DIR..."
+sudo mkdir -p "$DATA_DIR"
+sudo chown "${RUN_USER}:${RUN_USER}" "$DATA_DIR"
+sudo chmod 750 "$DATA_DIR"
+# Migracja istniejącej bazy z katalogu aplikacji
+if [ -f "$APP_DIR/torrents.db" ] && [ ! -f "$DATA_DIR/torrents.db" ]; then
+    cp "$APP_DIR/torrents.db" "$DATA_DIR/torrents.db"
+    echo "      ✓ Przeniesiono istniejącą bazę danych do $DATA_DIR"
+fi
+echo "      ✓ Katalog danych gotowy"
 
 # ── Środowisko wirtualne ──────────────────────────────────────
 echo "[1/4] Tworzenie środowiska wirtualnego..."
@@ -45,6 +59,8 @@ After=network.target
 Type=simple
 User=${RUN_USER}
 WorkingDirectory=${APP_DIR}
+EnvironmentFile=${APP_DIR}/.env
+Environment=DATA_DIR=${DATA_DIR}
 ExecStart=${APP_DIR}/venv/bin/python3 app.py
 Restart=on-failure
 RestartSec=10

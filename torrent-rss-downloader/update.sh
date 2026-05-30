@@ -8,6 +8,7 @@ APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_NAME="torrent-rss"
 REPO_URL="https://github.com/goof3r/rpi5.git"
 REPO_SUBDIR="torrent-rss-downloader"
+DATA_DIR="${DATA_DIR:-/var/lib/torrent-rss}"
 
 echo "=== Torrent RSS Downloader — aktualizacja ==="
 cd "$APP_DIR"
@@ -41,8 +42,8 @@ else
     git clone --depth 1 --quiet "$REPO_URL" "$TMP_DIR"
 
     # Zachowaj dane użytkownika przed nadpisaniem
-    [ -f "$APP_DIR/.env" ]        && cp "$APP_DIR/.env"        "$TMP_DIR/.env.bak"
-    [ -f "$APP_DIR/torrents.db" ] && cp "$APP_DIR/torrents.db" "$TMP_DIR/torrents.db.bak"
+    [ -f "$APP_DIR/.env" ] && cp "$APP_DIR/.env" "$TMP_DIR/.env.bak"
+    # Baza danych jest w DATA_DIR — nie wymaga backup/restore podczas aktualizacji kodu
 
     # Skopiuj nowe pliki (rsync zachowuje strukturę katalogów)
     if command -v rsync &>/dev/null; then
@@ -53,9 +54,8 @@ else
         cp -r "$TMP_DIR/$REPO_SUBDIR/." "$APP_DIR/"
     fi
 
-    # Przywróć dane użytkownika
-    [ -f "$TMP_DIR/.env.bak" ]        && cp "$TMP_DIR/.env.bak"        "$APP_DIR/.env"
-    [ -f "$TMP_DIR/torrents.db.bak" ] && cp "$TMP_DIR/torrents.db.bak" "$APP_DIR/torrents.db"
+    # Przywróć .env
+    [ -f "$TMP_DIR/.env.bak" ] && cp "$TMP_DIR/.env.bak" "$APP_DIR/.env"
 
     echo "      ✓ Pliki zaktualizowane"
 fi

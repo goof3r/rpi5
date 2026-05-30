@@ -69,14 +69,67 @@ Domyślne dane logowania: **admin / admin** — zmień hasło po pierwszym logow
 
 ---
 
-## Aktualizacja
+## Aktualizacja (rutynowa)
 
 ```bash
 cd ~/rpi5/torrent-rss-downloader
 bash update.sh
 ```
 
-Skrypt pobiera najnowszą wersję z git, aktualizuje zależności i restartuje usługę.
+Skrypt pobiera najnowszą wersję z git, aktualizuje zależności i restartuje usługę.  
+Baza danych (`/var/lib/torrent-rss/torrents.db`) **nie jest dotykana** podczas aktualizacji.
+
+---
+
+## Migracja z poprzedniej wersji (jednorazowa)
+
+Jeśli instalacja pochodzi sprzed tej zmiany, baza danych może znajdować się w starym miejscu:  
+`~/rpi5/torrent-rss-downloader/torrents.db`
+
+Poniższe kroki przenoszą bazę do `/var/lib/torrent-rss/torrents.db` i aktualizują usługę systemd — **bez utraty danych**.
+
+### Opcja A — automatyczna (zalecana)
+
+```bash
+cd ~/rpi5/torrent-rss-downloader
+git pull
+bash setup.sh
+```
+
+`setup.sh` wykryje istniejącą bazę w katalogu aplikacji, skopiuje ją do `/var/lib/torrent-rss/` i zaktualizuje usługę systemd. Cały proces trwa ~2 minuty, aplikacja jest niedostępna tylko podczas restartu usługi.
+
+### Opcja B — ręczna (krok po kroku)
+
+Jeśli nie chcesz ponownie uruchamiać `setup.sh`:
+
+```bash
+# 1. Pobierz nowy kod
+cd ~/rpi5
+git pull
+
+# 2. Utwórz katalog danych i przenieś bazę
+sudo mkdir -p /var/lib/torrent-rss
+sudo chown "$(whoami):$(whoami)" /var/lib/torrent-rss
+sudo chmod 750 /var/lib/torrent-rss
+
+sudo systemctl stop torrent-rss
+cp ~/rpi5/torrent-rss-downloader/torrents.db /var/lib/torrent-rss/torrents.db
+
+# 3. Dodaj DATA_DIR do .env
+echo "DATA_DIR=/var/lib/torrent-rss" >> ~/rpi5/torrent-rss-downloader/.env
+
+# 4. Zaktualizuj plik usługi systemd
+#    Dodaj poniższe dwie linie w sekcji [Service], przed ExecStart=:
+#      EnvironmentFile=/home/pi/rpi5/torrent-rss-downloader/.env
+#      Environment=DATA_DIR=/var/lib/torrent-rss
+sudo nano /etc/systemd/system/torrent-rss.service
+
+# 5. Przeładuj systemd i uruchom usługę
+sudo systemctl daemon-reload
+sudo systemctl start torrent-rss
+```
+
+> **Weryfikacja:** po uruchomieniu zaloguj się do aplikacji i sprawdź czy serwery Transmission, wzorce auto-pobierania i kanały RSS są nadal widoczne.
 
 ---
 
@@ -162,3 +215,4 @@ torrent-rss-downloader/
 | `FLASK_PORT` | `5000` | Port HTTP |
 | `FLASK_DEBUG` | `false` | Tryb debug (nie używaj na produkcji) |
 | `SCHEDULER_ENABLED` | `true` | Wyłącz przy wielu workerach gunicorn |
+| `DATA_DIR` | `/var/lib/torrent-rss` | Katalog danych — tu przechowywana jest baza `torrents.db` |
