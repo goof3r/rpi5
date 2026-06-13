@@ -1,0 +1,38 @@
+{
+    "s1": [
+        "campgrounds",
+        "almostlost",
+        "overkill",
+        "battleforged",
+        "houseofdecay",
+        "toxicity",
+        "furiousheights"
+    ],
+    "s2": [
+        "asylum",
+        "spillway",
+        "ironworks",
+        "hektik",
+        "lostworld",
+        "hiddenfortress",
+        "cure"
+    ],
+    "s3": [
+        "bloodrun",
+        "dismemberment",
+        "deepinside",
+        "retribution",
+        "brimstoneabbey",
+        "grimdungeons",
+        "leviathan"
+    ],
+    "s4": [
+        "campgrounds",
+        "asylum",
+        "overkill",
+        "houseofdecay",
+        "toxicity",
+        "almostlost",
+        "spillway"
+    ]
+}
