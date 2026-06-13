@@ -150,7 +150,7 @@ sudo apt-get update -y
 sudo apt-get install -y \
   python3 python3-dev python3-pip \
   redis-server git build-essential make \
-  wget curl ca-certificates tar locales \
+  wget curl ca-certificates tar locales screen \
   || die "Nie udało się zainstalować pakietów bazowych."
 
 # Biblioteki 32-bit potrzebne SteamCMD (nazwy różnią się między wersjami)
@@ -1390,11 +1390,15 @@ GTCFG
   }
 
   # 11c. Generator skryptu startowego + usługi systemd dla instancji trybu.
+  #   Serwer uruchamiany jest w sesji screen o nazwie start-<gt>.
+  #   Systemd (Type=oneshot RemainAfterExit) startuje screen przy bootowaniu
+  #   i umożliwia ręczne podłączenie:  screen -r start-<gt>
   #   $1 nazwa(gt)  $2 port_udp
   write_gt_service() {
     local gt="$1" port="$2"
     local start="$QLDS_DIR/start-${gt}.sh"
     local home="$QLDS_DIR/instances/${gt}"
+    local screen_name="start-${gt}"
     mkdir -p "$home"
     cat > "$start" <<STARTEOF
 #!/usr/bin/env bash
@@ -1415,17 +1419,17 @@ STARTEOF
     if [ "$INSTALL_SYSTEMD" = "1" ]; then
       sudo tee "/etc/systemd/system/qlserver-${gt}.service" >/dev/null <<UNITEOF
 [Unit]
-Description=Quake Live Dedicated Server (minqlx) - ${gt}
+Description=Quake Live Dedicated Server (minqlx) - ${gt} [screen: ${screen_name}]
 After=network.target redis-server.service
 Wants=redis-server.service
 
 [Service]
-Type=simple
+Type=oneshot
+RemainAfterExit=yes
 User=$(whoami)
 WorkingDirectory=${QLDS_DIR}
-ExecStart=${start}
-Restart=on-failure
-RestartSec=5
+ExecStart=/usr/bin/screen -dmS ${screen_name} ${start}
+ExecStop=/usr/bin/screen -S ${screen_name} -X quit
 
 [Install]
 WantedBy=multi-user.target
@@ -1433,7 +1437,7 @@ UNITEOF
       sudo systemctl daemon-reload
       sudo systemctl enable "qlserver-${gt}.service"
     fi
-    ok "  usługa: qlserver-${gt}  (port UDP ${port}, rcon TCP $((port+1000)))"
+    ok "  usługa: qlserver-${gt}  (port UDP ${port}, screen: ${screen_name})"
   }
 
   # 11d. Konfiguracje trybów — z lokalnego katalogu configs and mappool/ lub generowane.
@@ -1488,6 +1492,8 @@ UNITEOF
   write_gt_service "ft"  "27962"
 
   ok "Serwery trybów gotowe. Start: sudo systemctl start qlserver-{tdm,ffa,ft}"
+  ok "Podłącz do konsoli:  screen -r start-tdm  /  screen -r start-ffa  /  screen -r start-ft"
+  ok "Odłącz od screena:   Ctrl+A, D"
   warn "Otwórz w firewallu porty UDP: 27960 (tdm), 27961 (ffa), 27962 (ft)."
 fi
 
@@ -1510,13 +1516,29 @@ ZANIM WYSTARTUJESZ — sprawdź:
   • lista pluginów (qlx_plugins) w server.cfg
   • otwórz w firewallu port UDP ${NET_PORT}
 
-URUCHOMIENIE:
-  Ręcznie:        ${QLDS_DIR}/start.sh
+URUCHOMIENIE (serwery trybów FFA/TDM/FT — każdy w osobnym screenie):
+  Ręcznie (przez systemd):
+      sudo systemctl start qlserver-tdm
+      sudo systemctl start qlserver-ffa
+      sudo systemctl start qlserver-ft
+
+  Po reboot — serwery startują AUTOMATYCZNIE przez systemd (usługi włączone).
+
+  Podłącz się do konsoli serwera:
+      screen -r start-tdm
+      screen -r start-ffa
+      screen -r start-ft
+  Odłącz od screena (serwer nadal działa):  Ctrl+A, D
+  Lista aktywnych screenów:                 screen -ls
+  Zatrzymaj serwer:  sudo systemctl stop qlserver-<gt>
+  Status:            sudo systemctl status qlserver-<gt>
+  Logi systemd:      sudo journalctl -u qlserver-<gt> -f
 EOF
 if [ "$INSTALL_SYSTEMD" = "1" ]; then
 cat <<EOF
-  Przez systemd:  sudo systemctl start qlserver
-  Logi na żywo:   sudo journalctl -u qlserver -f
+
+  Generyczny serwer (server.cfg, port ${NET_PORT}):
+      Ręcznie:  screen -dmS start-ql ${QLDS_DIR}/start.sh
 EOF
 fi
 cat <<EOF
@@ -1527,10 +1549,8 @@ TEST: wejdź na serwer i wpisz na czacie:  !myperm
 KOLEJNE SERWERY: uruchom  ${QLDS_DIR}/add_server.sh  (lub  add_server.sh <nazwa> <port>).
   Każdy kolejny serwer ma własny port i własny plik baseq3/<nazwa>.cfg.
   WAŻNE: instancje dodawane przez add_server.sh NIE są rejestrowane w systemd
-  i NIE startują automatycznie. Uruchamiasz je ręcznie:
-      ${QLDS_DIR}/start-<nazwa>.sh
-      nohup ${QLDS_DIR}/start-<nazwa>.sh > ${QLDS_DIR}/<nazwa>.log 2>&1 &
-      screen -dmS qlserver-<nazwa> ${QLDS_DIR}/start-<nazwa>.sh
+  i NIE startują automatycznie. Uruchamiasz je ręcznie w screenie:
+      screen -dmS start-<nazwa> ${QLDS_DIR}/start-<nazwa>.sh
   Pamiętaj otworzyć w firewallu port UDP każdego z nich.
 
 AKTUALIZACJA: uruchom ten skrypt ponownie (zaktualizuje QLDS, minqlx i pluginy).
