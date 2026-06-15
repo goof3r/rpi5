@@ -35,9 +35,15 @@
 set qlx_serverhelpShowAll "0"
 """
 
+import zlib
+
 import minqlx
 
 VERSION = "1.0"
+
+# Pula kolorów QL używana do podświetlenia nazwy komendy wg pluginu.
+# Pomijamy ^4 (zarezerwowane dla "[plugin_name]") i ^7 (neutralny tekst).
+PLUGIN_COLOR_PALETTE = ("^1", "^2", "^3", "^5", "^6")
 
 # Limity wysyłki — takie same jak w załatanym commands.py v1.1.
 MAX_TELL_LEN = 900
@@ -141,7 +147,8 @@ class serverhelp(minqlx.Plugin):
         for canonical in sorted(seen):
             perm, names, plugin_name, usage = seen[canonical]
             aliases = "/".join(names) if len(names) > 1 else canonical
-            line = "^7{}{} ^8perm:{} ^4[{}]".format(prefix, aliases, perm, plugin_name)
+            color = self._plugin_color(plugin_name)
+            line = "{}{}{} ^7perm:{} ^4[{}]".format(color, prefix, aliases, perm, plugin_name)
             if usage:
                 line += " ^7{}".format(usage)
             lines.append(line)
@@ -188,6 +195,14 @@ class serverhelp(minqlx.Plugin):
         )
         self._send_lines(player, lines)
         return minqlx.RET_STOP_ALL
+
+    # ------------------------------------------------------------------ #
+    #  Stabilny kolor pluginu — crc32 zamiast hash(), bo PYTHONHASHSEED
+    #  randomizuje hash() między procesami i kolory skakałyby po restarcie.
+    # ------------------------------------------------------------------ #
+    def _plugin_color(self, plugin_name):
+        idx = zlib.crc32(plugin_name.encode("utf-8")) % len(PLUGIN_COLOR_PALETTE)
+        return PLUGIN_COLOR_PALETTE[idx]
 
     # ------------------------------------------------------------------ #
     #  Odczyt poziomu uprawnień (defensywny — działa też bez redisa).
