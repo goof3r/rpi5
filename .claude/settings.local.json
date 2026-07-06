@@ -74,7 +74,13 @@
       "Bash(npm config *)",
       "Bash(gh repo *)",
       "Bash(gh api *)",
-      "Bash(curl -fsSL --ssl-no-revoke \"https://raw.githubusercontent.com/roasticle/minqlx-plugins/master/weaponspawnfixer.py\" -o \"quakelive-server/minqlx-plugins/weaponspawnfixer.py\")"
+      "Bash(curl -fsSL --ssl-no-revoke \"https://raw.githubusercontent.com/roasticle/minqlx-plugins/master/weaponspawnfixer.py\" -o \"quakelive-server/minqlx-plugins/weaponspawnfixer.py\")",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" api \"repos/goof3r/rpi5/contents/quakelive-server/minqlx-plugins\" -q \".[].name\")",
+      "Bash(/c/Program Files/GitHub CLI/gh.exe api *)",
+      "Bash(claude doctor *)",
+      "Bash(python -m py_compile \"C:/Users/goFer/claude-gof/quakelive-server/serverhelp.py\")",
+      "Bash(py -3 -m py_compile \"C:/Users/goFer/claude-gof/quakelive-server/serverhelp.py\")",
+      "PowerShell(python3 -m py_compile \"C:\\\\Users\\\\goFer\\\\claude-gof\\\\quakelive-server\\\\serverhelp.py\"; if \\($?\\) { \"OK: syntax valid\" })"
     ]
   }
 }

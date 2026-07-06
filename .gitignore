@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# Standalone repo — mieszka w github.com/goof3r/quakelive-server
+quakelive-server/
