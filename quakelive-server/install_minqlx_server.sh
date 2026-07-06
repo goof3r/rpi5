@@ -10,7 +10,8 @@
 #    4. Kopiuje binarki minqlx do katalogu serwera
 #    5. Klonuje pluginy MinoMino (oficjalne) oraz BarelyMiSSeD (dodatkowe)
 #    6. Instaluje zależności pip pluginów
-#    7. Generuje server.cfg, skrypt startowy oraz usługę systemd
+#    7. Generuje server.cfg oraz skrypty startowe (BEZ systemd, BEZ screen —
+#       serwery uruchamiasz ręcznie: bash start-tdm.sh / start-ffa.sh / start-ft.sh)
 #
 #  Wymagania: Debian 10/11/12 lub Ubuntu 20.04/22.04/24.04 (system apt),
 #             architektura x86_64, użytkownik z prawami sudo (NIE root).
@@ -46,12 +47,9 @@ set -euo pipefail
 : "${QLDS_DIR:=$HOME/qlds}"          # tu wyląduje serwer QL + minqlx
 : "${BUILD_DIR:=$HOME/minqlx-build}" # tu klonujemy i kompilujemy źródła
 
-# Czy zainstalować usługę systemd (autostart). 1 = tak, 0 = nie
-: "${INSTALL_SYSTEMD:=1}"
-
 # Czy zainstalować gotowe serwery trybów FFA/TDM/FT (z dołączonymi factory
-# crobartie). 1 = tak. Gdy włączone, instalator NIE uruchamia generycznego
-# qlserver (server.cfg) automatycznie — zamiast tego włącza qlserver-ffa/tdm/ft.
+# crobartie). 1 = tak. Generuje skrypty startowe start-<gt>.sh, które
+# uruchamiasz ręcznie (bez systemd, bez screen — serwery sam odpalasz).
 : "${INSTALL_GAMETYPE_SERVERS:=1}"
 
 # Repozytoria (zwykle nie trzeba zmieniać)
@@ -65,6 +63,7 @@ QUEUE_RAW="https://raw.githubusercontent.com/Melodeiro/minqlx-plugins_mattiZed/m
 AUTOSPEC_RAW="https://raw.githubusercontent.com/dsverdlo/minqlx-plugins/master/autospec.py"
 IOUONE_RAW="https://raw.githubusercontent.com/dsverdlo/minqlx-plugins/master/iouonegirl.py"  # klasa bazowa dla autospec
 CHECKPLAYERS_RAW="https://raw.githubusercontent.com/x0rnn/minqlx-plugins/master/checkplayers.py"
+WEAPONSPAWNFIXER_RAW="https://raw.githubusercontent.com/roasticle/minqlx-plugins/master/weaponspawnfixer.py"
 # Repo TEGO instalatora (źródło załatanego commands.py, gdy instalator uruchamiany
 # przez 'curl | bash' bez lokalnej kopii). Nadpiszesz np. forkując i ustawiając
 # COMMANDS_PY_URL=...  w środowisku przed uruchomieniem.
@@ -339,11 +338,13 @@ ok "Pluginy dodatkowe skopiowane (włączysz wybrane w server.cfg → qlx_plugin
 #   autospec     (dsverdlo)           — auto-spec przy nierównych drużynach;
 #                                        wymaga klasy bazowej iouonegirl.py + pip 'requests'
 #   checkplayers (x0rnn)              — !checkplayers: lista perm/ban/silence/leaver
+#   weaponspawnfixer (roasticle)      — wymusza g_weaponRespawn na starcie mapy/gry
+#                                        (obejście buga silnika QL ignorującego cvar)
 # UWAGA: są tylko POBIERANE (dostępne), ale NIE włączone w domyślnym server.cfg.
 # Włączają je dopiero konfiguracje trybów (qlx_plugins w ffa/tdm/ft.cfg).
 # Pluginów 'patch' i 'specvote' z tamtych cfg NIE pobieramy — to bespoke pluginy
 # konkretnego serwera (twarde, obce ustawienia), bezużyteczne na innym serwerze.
-log "Pobieram zewnętrzne pluginy (queue, autospec, checkplayers)..."
+log "Pobieram zewnętrzne pluginy (queue, autospec, checkplayers, weaponspawnfixer)..."
 fetch_plugin() {  # $1=URL  $2=docelowa_nazwa_pliku
   if curl -sfqL "$1" -o "$QLDS_DIR/minqlx-plugins/$2" && [ -s "$QLDS_DIR/minqlx-plugins/$2" ]; then
     ok "  pobrano: $2"
@@ -355,6 +356,7 @@ fetch_plugin "$QUEUE_RAW"        "queue.py"
 fetch_plugin "$AUTOSPEC_RAW"     "autospec.py"
 fetch_plugin "$IOUONE_RAW"       "iouonegirl.py"   # klasa bazowa wymagana przez autospec
 fetch_plugin "$CHECKPLAYERS_RAW" "checkplayers.py"
+fetch_plugin "$WEAPONSPAWNFIXER_RAW" "weaponspawnfixer.py"
 
 # ── 5c. Lokalne pluginy z katalogu minqlx-plugins/ (nadpisują wersje z repo) ─
 # Jeśli obok skryptu instalatora istnieje katalog minqlx-plugins/ (lokalny klon
@@ -409,12 +411,12 @@ mkdir -p "$QLDS_DIR/baseq3"
 
 # Pełna lista pluginów. Wstrzykiwana do server.cfg, a przy aktualizacji
 # synchronizowana również w już istniejącym server.cfg (patrz niżej).
-QLX_PLUGINS_LIST="plugin_manager, essentials, motd, permission, ban, silence, clan, names, log, workshop, aliases, autorestart, botmanager, branding, custom_votes, dictionary, disabled_commands, ips, onjoin, permaban, permissionlist, q3resolver, quiet, ratinglimiter, sv_fps, thirtysecwarn, votemanager, votestats, commands, serverhelp, permoverride"
+QLX_PLUGINS_LIST="plugin_manager, essentials, motd, permission, ban, silence, clan, names, log, workshop, weaponspawnfixer, aliases, autorestart, botmanager, branding, custom_votes, dictionary, disabled_commands, ips, onjoin, permaban, permissionlist, q3resolver, quiet, ratinglimiter, sv_fps, thirtysecwarn, votemanager, votestats, commands, serverhelp, permoverride"
 
 # Lista pluginów dla serwerów trybów (FFA/TDM/FT). Wzięta z dołączonych cfg-ów,
 # ale OCZYSZCZONA: usunięte 'irc' (na życzenie) oraz 'patch' i 'specvote' (bespoke
 # pluginy obcego serwera — nie istnieją w żadnym repo, blokowałyby ładowanie).
-GT_PLUGINS_LIST="plugin_manager, essentials, motd, permission, ban, clan, names, silence, log, balance, branding, workshop, queue, autospec, checkplayers, votestats, ips, aliases, botmanager, onjoin, serverhelp, permoverride"
+GT_PLUGINS_LIST="plugin_manager, essentials, motd, permission, ban, warmup_weapons, clan, names, silence, log, balance, branding, workshop, weaponspawnfixer, queue, autospec, checkplayers, votestats, ips, aliases, botmanager, onjoin, serverhelp, permoverride"
 
 if [ -f "$CFG" ]; then
   warn "server.cfg już istnieje — nie nadpisuję go w całości. Wzór: server.cfg.example."
@@ -504,9 +506,11 @@ set qlx_plugins            "__QLX_PLUGINS__"
 
 // --- Pluginy ZEWNĘTRZNE (pobierane przez instalator z repo innych autorów) ---
 // Dostępne, ale NIE włączone tutaj — używają ich konfiguracje trybów FFA/TDM/FT:
-//   queue        - kolejka graczy do gry (mattiZed/Melodeiro)
-//   autospec     - auto-spec przy nierównych drużynach (dsverdlo; wymaga requests)
-//   checkplayers - !checkplayers: gracze z perm/ban/silence/leaver (x0rnn)
+//   queue            - kolejka graczy do gry (mattiZed/Melodeiro)
+//   autospec         - auto-spec przy nierównych drużynach (dsverdlo; wymaga requests)
+//   checkplayers     - !checkplayers: gracze z perm/ban/silence/leaver (x0rnn)
+//   weaponspawnfixer - wymusza g_weaponRespawn na new_game/game_start (roasticle)
+//                      obejście buga silnika QL, który potrafi zignorować cvar
 // (UWAGA: 'balance' (MinoMino) + 'autospec' + 'queue' to trzy nakładające się
 //  systemy zarządzania drużynami/kolejką — włączaj świadomie, mogą sobie wchodzić
 //  w drogę. 'patch' i 'specvote' z obcych cfg celowo POMINIĘTE — bespoke, obce.)
@@ -610,56 +614,28 @@ EOF
 chmod +x "$START"
 ok "Skrypt startowy: $START"
 
-# ── 9. systemd ───────────────────────────────────────────────────────────────
-if [ "$INSTALL_SYSTEMD" = "1" ]; then
-  log "Instaluję usługę systemd (autostart)..."
-  UNIT="/etc/systemd/system/qlserver.service"
-  sudo tee "$UNIT" >/dev/null <<EOF
-[Unit]
-Description=Quake Live Dedicated Server (minqlx)
-After=network.target redis-server.service
-Wants=redis-server.service
-
-[Service]
-Type=simple
-User=$(whoami)
-WorkingDirectory=${QLDS_DIR}
-ExecStart=${QLDS_DIR}/start.sh
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  sudo systemctl daemon-reload
-  if [ "$INSTALL_GAMETYPE_SERVERS" = "1" ]; then
-    ok "Usługa qlserver.service zainstalowana, ale NIE włączona (używasz serwerów trybów FFA/TDM/FT; generyczny server.cfg dzieliłby port 27960 z tdm)."
-  else
-    sudo systemctl enable qlserver.service
-    ok "Usługa qlserver.service zainstalowana (jeszcze nieuruchomiona)."
-  fi
-fi
+# ── 9. Skrypt startowy (bez systemd, bez screen) ─────────────────────────────
+# Instalator NIE tworzy usługi systemd ani nie wrapuje serwera w screen.
+# Serwer uruchamiasz ręcznie:  bash ${QLDS_DIR}/start.sh
+# (jeśli chcesz mieć konsolę w tle — sam użyj np. screen/tmux/nohup).
+ok "Skrypt startowy gotowy: ${QLDS_DIR}/start.sh — uruchom ręcznie: bash start.sh"
 
 # ── 10. Narzędzie do dodawania kolejnych serwerów QL ─────────────────────────
 # Kolejne serwery używają TEJ SAMEJ instalacji QLDS/minqlx, ale mają:
 #   • własny port UDP,
 #   • własny plik konfiguracji baseq3/<nazwa>.cfg (pierwszy ma server.cfg),
-#   • własny skrypt start-<nazwa>.sh.
+#   • własny skrypt start-<nazwa>.sh (uruchamiany ręcznie — bez systemd/screen).
 # Owner (qlx_owner) oraz hasła rcon/stats dziedziczone są z pierwszego start.sh.
-#
-# UWAGA: instancje dodawane przez add_server.sh NIE są rejestrowane w systemd
-# i NIE uruchamiają się automatycznie. Uruchamiasz je ręcznie skryptem
-# start-<nazwa>.sh (najlepiej w screen/tmux lub nohup). Jeśli chcesz autostart,
-# napisz własny unit albo zrób to ręcznie na bazie szablonu z sekcji 9.
 ADD_SCRIPT="$QLDS_DIR/add_server.sh"
 log "Tworzę narzędzie dodawania serwerów: $ADD_SCRIPT"
 {
   echo '#!/usr/bin/env bash'
-  echo '# add_server.sh — dodaje kolejny serwer QL (instancję).'
+  echo '# add_server.sh — dodaje kolejny serwer QL (instancję): tworzy config i skrypt startowy.'
   echo '# Użycie:  ./add_server.sh [nazwa] [port]   (bez argumentów pyta interaktywnie)'
-  echo '# Instancja NIE jest rejestrowana w systemd — uruchamiasz ręcznie ./start-<nazwa>.sh'
+  echo '# Serwer uruchamiasz ręcznie:  bash start-<nazwa>.sh   (BEZ systemd, BEZ screen).'
   echo 'set -euo pipefail'
   echo "QLDS_DIR=\"$QLDS_DIR\""
+  echo "WHO=\"$(whoami)\""
   cat <<'ADDBODY'
 c_ok="\033[1;32m"; c_warn="\033[1;33m"; c_err="\033[1;31m"; c_i="\033[1;36m"; c_e="\033[0m"
 log(){ echo -e "${c_i}[*]${c_e} $*"; }; ok(){ echo -e "${c_ok}[OK]${c_e} $*"; }
@@ -726,23 +702,18 @@ exec ./run_server_x64_minqlx.sh \\
 START_EOF
 chmod +x "$START"
 
-# 6) BEZ systemd — instancja uruchamiana ręcznie.
-#    Jeśli chcesz autostart przy boocie, utwórz własny unit na wzór qlserver.service
-#    (sekcja 9 instalatora) i wskaż w nim ExecStart=${START}.
-
-ok "Dodano serwer '${SAFE}' (BEZ rejestracji w systemd)."
+# 6) Bez systemd, bez screen — serwer uruchamiasz ręcznie skryptem startowym.
+ok "Dodano serwer '${SAFE}' (skrypt startowy: ${START})."
 echo "  config:    $CFG"
 echo "  start:     $START"
 echo "  port:      UDP $PORT (rcon TCP $((PORT+1000)))"
-echo "  uruchom:   $START"
-echo "  w tle:     nohup $START > $QLDS_DIR/${SAFE}.log 2>&1 &"
-echo "  w screen:  screen -dmS qlserver-${SAFE} $START   (potem: screen -r qlserver-${SAFE})"
+echo "  uruchom:   bash ${START}"
 echo "  firewall:  otworz port UDP $PORT"
 echo "  panel:     aby zarzadzac nim w panelu, dodaj wpis do qlpanel/servers.json"
 ADDBODY
 } > "$ADD_SCRIPT"
 chmod +x "$ADD_SCRIPT"
-ok "Gotowe: $ADD_SCRIPT — uruchom kiedykolwiek, by dodać kolejny serwer (bez systemd)."
+ok "Gotowe: $ADD_SCRIPT — uruchom kiedykolwiek, by dodać kolejny serwer (tworzy config i skrypt startowy)."
 
 # Opcjonalnie: dodaj kolejne serwery już teraz (tylko w trybie interaktywnym).
 if [ -t 0 ]; then
@@ -757,7 +728,8 @@ fi
 
 # ── 11. Serwery trybów FFA / TDM / FT (+ dołączone factory) ──────────────────
 # Wgrywa plik z własnymi factory (gametypes.factories) oraz trzy gotowe,
-# OCZYSZCZONE konfiguracje trybów i usługi systemd dla każdej z nich.
+# OCZYSZCZONE konfiguracje trybów i skrypty startowe start-<gt>.sh dla każdej
+# z nich (serwery uruchamiasz ręcznie — bez systemd, bez screen).
 # Porty: tdm=27960, ffa=27961, ft=27962.
 if [ "$INSTALL_GAMETYPE_SERVERS" = "1" ]; then
   log "Instaluję serwery trybów FFA/TDM/FT + factory..."
@@ -1389,16 +1361,13 @@ GTCFG
     ok "  konfiguracja: baseq3/${gt}.cfg  (startup: ${startup})"
   }
 
-  # 11c. Generator skryptu startowego + usługi systemd dla instancji trybu.
-  #   Serwer uruchamiany jest w sesji screen o nazwie start-<gt>.
-  #   Systemd (Type=oneshot RemainAfterExit) startuje screen przy bootowaniu
-  #   i umożliwia ręczne podłączenie:  screen -r start-<gt>
+  # 11c. Generator skryptu startowego dla instancji trybu (BEZ systemd/screen).
+  #   Serwer uruchamiasz ręcznie:  bash ${QLDS_DIR}/start-<gt>.sh
   #   $1 nazwa(gt)  $2 port_udp
   write_gt_service() {
     local gt="$1" port="$2"
     local start="$QLDS_DIR/start-${gt}.sh"
     local home="$QLDS_DIR/instances/${gt}"
-    local screen_name="start-${gt}"
     mkdir -p "$home"
     cat > "$start" <<STARTEOF
 #!/usr/bin/env bash
@@ -1416,28 +1385,7 @@ exec ./run_server_x64_minqlx.sh \\
   +exec ${gt}.cfg
 STARTEOF
     chmod +x "$start"
-    if [ "$INSTALL_SYSTEMD" = "1" ]; then
-      sudo tee "/etc/systemd/system/qlserver-${gt}.service" >/dev/null <<UNITEOF
-[Unit]
-Description=Quake Live Dedicated Server (minqlx) - ${gt} [screen: ${screen_name}]
-After=network.target redis-server.service
-Wants=redis-server.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-User=$(whoami)
-WorkingDirectory=${QLDS_DIR}
-ExecStart=/usr/bin/screen -dmS ${screen_name} ${start}
-ExecStop=/usr/bin/screen -S ${screen_name} -X quit
-
-[Install]
-WantedBy=multi-user.target
-UNITEOF
-      sudo systemctl daemon-reload
-      sudo systemctl enable "qlserver-${gt}.service"
-    fi
-    ok "  usługa: qlserver-${gt}  (port UDP ${port}, screen: ${screen_name})"
+    ok "  skrypt startowy: start-${gt}.sh  (port UDP ${port}) — uruchom: bash start-${gt}.sh"
   }
 
   # 11d. Konfiguracje trybów — z lokalnego katalogu configs and mappool/ lub generowane.
@@ -1491,9 +1439,10 @@ UNITEOF
   write_gt_service "ffa" "27961"
   write_gt_service "ft"  "27962"
 
-  ok "Serwery trybów gotowe. Start: sudo systemctl start qlserver-{tdm,ffa,ft}"
-  ok "Podłącz do konsoli:  screen -r start-tdm  /  screen -r start-ffa  /  screen -r start-ft"
-  ok "Odłącz od screena:   Ctrl+A, D"
+  ok "Serwery trybów gotowe. Uruchom ręcznie:"
+  ok "  bash ${QLDS_DIR}/start-tdm.sh"
+  ok "  bash ${QLDS_DIR}/start-ffa.sh"
+  ok "  bash ${QLDS_DIR}/start-ft.sh"
   warn "Otwórz w firewallu porty UDP: 27960 (tdm), 27961 (ffa), 27962 (ft)."
 fi
 
@@ -1516,41 +1465,26 @@ ZANIM WYSTARTUJESZ — sprawdź:
   • lista pluginów (qlx_plugins) w server.cfg
   • otwórz w firewallu port UDP ${NET_PORT}
 
-URUCHOMIENIE (serwery trybów FFA/TDM/FT — każdy w osobnym screenie):
-  Ręcznie (przez systemd):
-      sudo systemctl start qlserver-tdm
-      sudo systemctl start qlserver-ffa
-      sudo systemctl start qlserver-ft
-
-  Po reboot — serwery startują AUTOMATYCZNIE przez systemd (usługi włączone).
-
-  Podłącz się do konsoli serwera:
-      screen -r start-tdm
-      screen -r start-ffa
-      screen -r start-ft
-  Odłącz od screena (serwer nadal działa):  Ctrl+A, D
-  Lista aktywnych screenów:                 screen -ls
-  Zatrzymaj serwer:  sudo systemctl stop qlserver-<gt>
-  Status:            sudo systemctl status qlserver-<gt>
-  Logi systemd:      sudo journalctl -u qlserver-<gt> -f
-EOF
-if [ "$INSTALL_SYSTEMD" = "1" ]; then
-cat <<EOF
+URUCHOMIENIE (ręcznie — instalator NIE tworzy usług systemd ani nie wrapuje w screen):
+  Serwery trybów FFA/TDM/FT:
+      bash ${QLDS_DIR}/start-tdm.sh
+      bash ${QLDS_DIR}/start-ffa.sh
+      bash ${QLDS_DIR}/start-ft.sh
 
   Generyczny serwer (server.cfg, port ${NET_PORT}):
-      Ręcznie:  screen -dmS start-ql ${QLDS_DIR}/start.sh
-EOF
-fi
-cat <<EOF
+      bash ${QLDS_DIR}/start.sh
+
+  Chcesz odpiąć konsolę? Sam użyj np. screen/tmux/nohup:
+      screen -dmS start-tdm bash ${QLDS_DIR}/start-tdm.sh
+      tmux new -d -s start-tdm "bash ${QLDS_DIR}/start-tdm.sh"
 
 TEST: wejdź na serwer i wpisz na czacie:  !myperm
   -> jeśli pokaże poziom uprawnień > 0, jesteś rozpoznany jako właściciel.
 
 KOLEJNE SERWERY: uruchom  ${QLDS_DIR}/add_server.sh  (lub  add_server.sh <nazwa> <port>).
-  Każdy kolejny serwer ma własny port i własny plik baseq3/<nazwa>.cfg.
-  WAŻNE: instancje dodawane przez add_server.sh NIE są rejestrowane w systemd
-  i NIE startują automatycznie. Uruchamiasz je ręcznie w screenie:
-      screen -dmS start-<nazwa> ${QLDS_DIR}/start-<nazwa>.sh
+  Każdy kolejny serwer ma własny port, własny plik baseq3/<nazwa>.cfg
+  oraz własny skrypt start-<nazwa>.sh — uruchamiasz go ręcznie:
+      bash ${QLDS_DIR}/start-<nazwa>.sh
   Pamiętaj otworzyć w firewallu port UDP każdego z nich.
 
 AKTUALIZACJA: uruchom ten skrypt ponownie (zaktualizuje QLDS, minqlx i pluginy).

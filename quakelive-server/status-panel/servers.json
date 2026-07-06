@@ -1,0 +1,8 @@
+[
+  {"id": "tsk-tdm",  "host": "tsk.qlive.one.pl",   "port": 27960, "name": "TSK · TDM",  "queryHost": "127.0.0.1"},
+  {"id": "tsk-ffa",  "host": "tsk.qlive.one.pl",   "port": 27961, "name": "TSK · FFA",  "queryHost": "127.0.0.1"},
+  {"id": "tsk-ft",   "host": "tsk.qlive.one.pl",   "port": 27962, "name": "TSK · FT",   "queryHost": "127.0.0.1"},
+  {"id": "tsk2-tdm", "host": "tsk2.qlive.one.pl",  "port": 27960, "name": "TSK2 · TDM"},
+  {"id": "tsk2-ffa", "host": "tsk2.qlive.one.pl",  "port": 27961, "name": "TSK2 · FFA"},
+  {"id": "tsk2-ft",  "host": "tsk2.qlive.one.pl",  "port": 27962, "name": "TSK2 · FT"}
+]

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="options.css">
+  <title>Transmission Notifier - ustawienia</title>
+</head>
+<body>
+  <main>
+    <h1>Serwery Transmission</h1>
+
+    <div class="top-actions">
+      <button id="export-btn" type="button">&#x2B07; Eksportuj konfiguracje</button>
+      <button id="import-btn" type="button">&#x2B06; Importuj konfiguracje</button>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+      <span class="warn">Eksport zawiera hasla w postaci jawnej.</span>
+    </div>
+
+    <p class="hint">
+      Dla kazdego serwera przegladarka poprosi o zgode na dostep do jego adresu.
+      URL podaj w postaci <code>http://host:9091</code> (bez <code>/transmission/rpc</code>, dodamy automatycznie).
+    </p>
+
+    <section id="servers"></section>
+
+    <h2 id="form-title">Dodaj serwer</h2>
+    <form id="form">
+      <input type="hidden" id="f-id">
+      <label>Nazwa
+        <input type="text" id="f-name" required placeholder="np. Domowy NAS">
+      </label>
+      <label>URL
+        <input type="text" id="f-url" required placeholder="http://192.168.1.10:9091">
+      </label>
+      <div class="row2">
+        <label>Login
+          <input type="text" id="f-user" autocomplete="off" placeholder="(opcjonalnie)">
+        </label>
+        <label>Haslo
+          <input type="password" id="f-pass" autocomplete="new-password" placeholder="(opcjonalnie)">
+        </label>
+      </div>
+
+      <fieldset class="group">
+        <legend>Otwieranie plikow (dwuklik na torrencie)</legend>
+        <label>Bazowy URL udzialu (Samba/SMB lub WWW)
+          <input type="text" id="f-samba" placeholder="np. smb://192.168.1.10/torrents  lub  file://///nas/torrents  lub  http://nas/files">
+        </label>
+        <label>Sciezka pobierania w Transmission (prefiks do obciecia)
+          <input type="text" id="f-dlpath" placeholder="np. /mnt/storage/torrents (opcjonalnie)">
+        </label>
+        <p class="sub-hint">
+          Po dwukliku na torrencie otworzy sie <code>BAZA + (downloadDir - PREFIKS) + /nazwa</code>.
+          Jesli prefiks pusty, doklejona zostanie sama nazwa torrenta.
+        </p>
+      </fieldset>
+
+      <div class="actions">
+        <button type="button" id="test-btn">Testuj polaczenie</button>
+        <button type="submit" id="save-btn">Zapisz</button>
+        <button type="button" id="cancel-btn" hidden>Anuluj edycje</button>
+      </div>
+      <div id="form-msg" class="msg" hidden></div>
+    </form>
+  </main>
+  <script src="options.js" type="module"></script>
+</body>
+</html>

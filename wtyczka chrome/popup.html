@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+  <title>Transmission</title>
+</head>
+<body>
+  <header class="bar">
+    <select id="server-select" title="Wybierz serwer"></select>
+    <button id="refresh" title="Odswiez">&#x21bb;</button>
+    <button id="options" title="Ustawienia">&#9881;</button>
+  </header>
+
+  <section class="add">
+    <input type="text" id="add-input" placeholder="magnet:?... lub URL pliku .torrent">
+    <button id="add-btn">Dodaj</button>
+    <label class="file-btn" title="Wyslij plik .torrent z dysku">
+      <input type="file" id="add-file" accept=".torrent,application/x-bittorrent" hidden>
+      Plik...
+    </label>
+  </section>
+
+  <div id="msg" class="msg" hidden></div>
+
+  <section class="totals" id="totals"></section>
+
+  <section class="list" id="list">
+    <p class="empty">Laduje...</p>
+  </section>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

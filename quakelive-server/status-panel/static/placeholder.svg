@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a1f29"/>
+      <stop offset="1" stop-color="#0a0c10"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#232a36" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <rect width="640" height="360" fill="url(#grid)"/>
+  <g fill="#7a8595" font-family="ui-monospace,Consolas,monospace" text-anchor="middle">
+    <text x="320" y="180" font-size="22" letter-spacing="3">NO LEVELSHOT</text>
+    <text x="320" y="208" font-size="12" letter-spacing="2" opacity=".6">map levelshot not in pk3</text>
+  </g>
+</svg>
