@@ -1,3 +1,0 @@
-[submodule "minqlx"]
-	path = tests/minqlx-repo
-	url = https://github.com/MinoMino/minqlx.git
