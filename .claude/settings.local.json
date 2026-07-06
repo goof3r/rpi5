@@ -80,7 +80,12 @@
       "Bash(claude doctor *)",
       "Bash(python -m py_compile \"C:/Users/goFer/claude-gof/quakelive-server/serverhelp.py\")",
       "Bash(py -3 -m py_compile \"C:/Users/goFer/claude-gof/quakelive-server/serverhelp.py\")",
-      "PowerShell(python3 -m py_compile \"C:\\\\Users\\\\goFer\\\\claude-gof\\\\quakelive-server\\\\serverhelp.py\"; if \\($?\\) { \"OK: syntax valid\" })"
+      "PowerShell(python3 -m py_compile \"C:\\\\Users\\\\goFer\\\\claude-gof\\\\quakelive-server\\\\serverhelp.py\"; if \\($?\\) { \"OK: syntax valid\" })",
+      "WebFetch(domain:steamcommunity.com)",
+      "Bash(powershell *)",
+      "PowerShell($ids = @\\(637351306,638531198,638618725,641499246,641575854,641587915,643615147,663160788,673213646,675534589,679928531,679928822,726131097,726132863,726133798,726134197,774095795,803438741,824405003,824405313,827249184,827250713,827252336,850146040,852034378\\); $body = @{ itemcount = $ids.Count }; for \\($i=0; $i -lt $ids.Count; $i++\\) { $body[\"publishedfileids[$i]\"] = $ids[$i] }; try { $r = Invoke-RestMethod -Uri \"https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/\" -Method POST -Body $body -TimeoutSec 30; $r.response.publishedfiledetails | ForEach-Object { Write-Output \\(\"=== ID: \" + $_.publishedfileid + \" ===\"\\); Write-Output \\(\"TITLE: \" + $_.title\\); Write-Output \\(\"DESC:\"\\); Write-Output $_.description; Write-Output \"---\" } } catch { Write-Output \"ERROR: $\\($_.Exception.Message\\)\" })",
+      "PowerShell($ids = @\\(641587915, 663160788, 673213646\\); $body = @{ itemcount = $ids.Count }; for \\($i=0; $i -lt $ids.Count; $i++\\) { $body[\"publishedfileids[$i]\"] = $ids[$i] }; $r = Invoke-RestMethod -Uri \"https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/\" -Method POST -Body $body -TimeoutSec 30; $r.response.publishedfiledetails | ConvertTo-Json -Depth 5)",
+      "PowerShell($ids = @\\(539421606,539421982,546664071,547252823,564894881,564946744,565025333,568582691,573807159,573808557,575312620,582665687,583820600,584815070,584964611,584984610,586817666,617896584,623144451,637350852\\); $body = @{ itemcount = $ids.Count }; for \\($i=0; $i -lt $ids.Count; $i++\\) { $body[\"publishedfileids[$i]\"] = $ids[$i] }; $r = Invoke-RestMethod -Uri \"https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/\" -Method POST -Body $body -TimeoutSec 30; $r.response.publishedfiledetails | ForEach-Object { Write-Output \\(\"=== ID: \" + $_.publishedfileid + \" ===\"\\); Write-Output \\(\"TITLE: \" + $_.title\\); Write-Output \\(\"DESC:\"\\); Write-Output $_.description; Write-Output \"---\" })"
     ]
   }
 }
