@@ -30,7 +30,15 @@ except ImportError:
     print("Brak biblioteki python-telegram-bot. Zainstaluj: pip3 install python-telegram-bot")
     sys.exit(1)
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
+
+# Monitor AP Omada (omada_monitor.py w tym samym katalogu) — opcjonalny
+try:
+    import omada_monitor
+    _OMADA_IMPORT_ERROR = ""
+except Exception as _e:  # brak pliku lub błąd — bot działa dalej bez /omada
+    omada_monitor = None
+    _OMADA_IMPORT_ERROR = str(_e)
 
 # ── Konfiguracja ──────────────────────────────────────────────────────────────
 BOT_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -438,6 +446,91 @@ async def notes_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML",
             )
 
+# ── Omada — stan access pointów ──────────────────────────────────────────────
+
+def _omada_markup(buttons) -> InlineKeyboardMarkup | None:
+    if not buttons:
+        return None
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(label, callback_data=data) for label, data in row]
+        for row in buttons
+    ])
+
+
+async def _omada_unavailable(message) -> bool:
+    if omada_monitor is None:
+        await message.reply_text(
+            "⚠️ Moduł Omada niedostępny (brak omada_monitor.py obok bota?)\n"
+            f"<code>{esc(_OMADA_IMPORT_ERROR)}</code>", parse_mode="HTML")
+        return True
+    return False
+
+
+async def _omada_reply(message, text: str, buttons) -> None:
+    """Wysyła odpowiedź; długi tekst dzieli na części, przyciski pod ostatnią."""
+    parts = omada_monitor.split_message(text)
+    for part in parts[:-1]:
+        await message.reply_text(part, parse_mode="HTML")
+    await message.reply_text(parts[-1] if parts else "—", parse_mode="HTML",
+                             reply_markup=_omada_markup(buttons))
+
+
+async def cmd_omada(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/omada — podsumowanie; /omada <lokalizacja> — AP w lokalizacji."""
+    if not authorized(update) or await _omada_unavailable(update.message):
+        return
+    wait = await update.message.reply_text("⏳ Pytam kontroler Omada…")
+    query = " ".join(ctx.args or []).strip()
+    if query:
+        text, buttons = await asyncio.to_thread(omada_monitor.bot_site, query)
+    else:
+        text, buttons = await asyncio.to_thread(omada_monitor.bot_summary)
+    await wait.delete()
+    await _omada_reply(update.message, text, buttons)
+
+
+async def cmd_omada_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not authorized(update) or await _omada_unavailable(update.message):
+        return
+    wait = await update.message.reply_text("⏳ Pytam kontroler Omada…")
+    text, buttons = await asyncio.to_thread(omada_monitor.bot_all)
+    await wait.delete()
+    await _omada_reply(update.message, text, buttons)
+
+
+async def cmd_omada_notify(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/omada_powiadomienia — godziny wysyłania, przypomnienia, pauza."""
+    if not authorized(update) or await _omada_unavailable(update.message):
+        return
+    text = await asyncio.to_thread(omada_monitor.bot_notify, list(ctx.args or []))
+    await _send_pages(update.message, text)
+
+
+async def omada_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Przyciski: omd:sum (podsumowanie), omd:all (wszystkie), omd:s:<siteId>."""
+    query = update.callback_query
+    if not authorized(update) or omada_monitor is None:
+        await query.answer("Brak dostępu")
+        return
+    await query.answer("Odświeżam…")
+    data = query.data or ""
+    if data.startswith("omd:s:"):
+        text, buttons = await asyncio.to_thread(omada_monitor.bot_site, data[6:], None, True)
+    elif data == "omd:all":
+        text, buttons = await asyncio.to_thread(omada_monitor.bot_all)
+    else:
+        text, buttons = await asyncio.to_thread(omada_monitor.bot_summary)
+
+    if len(text) <= 3800:
+        try:
+            await query.edit_message_text(text, parse_mode="HTML",
+                                          reply_markup=_omada_markup(buttons))
+        except Exception as e:
+            if "not modified" not in str(e).lower():  # odświeżenie bez zmian
+                logger.warning("Omada callback: %s", e)
+    else:
+        await _omada_reply(query.message, text, buttons)
+
 # ── Helpers kursów walut ──────────────────────────────────────────────────────
 
 def nbp_fetch_rate(currency: str) -> float | None:
@@ -705,7 +798,12 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "  /rpi5_notatki czytaj &lt;temat&gt;    — odczytaj\n"
         "  /rpi5_notatki edytuj &lt;temat&gt;    — edytuj\n"
         "  /rpi5_notatki usun &lt;temat&gt;      — usuń\n"
-        "  /rpi5_notatki szukaj &lt;fraza&gt;    — szukaj",
+        "  /rpi5_notatki szukaj &lt;fraza&gt;    — szukaj\n\n"
+        "<b>── Omada (access pointy) ──</b>\n"
+        "  /omada                  — podsumowanie lokalizacji\n"
+        "  /omada &lt;lokalizacja&gt;     — AP w danej lokalizacji\n"
+        "  /omada_wszystkie        — wszystkie AP\n"
+        "  /omada_powiadomienia    — godziny, przypomnienia, pauza",
         parse_mode="HTML"
     )
 
@@ -920,6 +1018,32 @@ async def cmd_reboot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
+def _update_omada_monitor() -> str:
+    """Przy /rpi5_update pobiera też omada_monitor.py (z tego samego katalogu w repo)
+    i restartuje usługę omada-monitor, jeśli jest zainstalowana. Błąd nie blokuje
+    aktualizacji bota."""
+    url = UPDATE_URL.rsplit("/", 1)[0] + "/omada_monitor.py"
+    path = SCRIPT_PATH.parent / "omada_monitor.py"
+    try:
+        with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=30) as resp:
+            content = resp.read()
+        ast.parse(content)
+        if path.exists():
+            if path.read_bytes() == content:
+                return "Monitor Omada: bez zmian."
+            shutil.copy2(path, str(path) + ".bak")
+        path.write_bytes(content)
+        os.chmod(path, 0o755)
+    except Exception as e:
+        return f"⚠️ Monitor Omada nie zaktualizowany: <code>{esc(str(e))}</code>"
+    rc, _, _ = run("systemctl is-enabled --quiet omada-monitor.service")
+    if rc == 0:
+        run("systemctl restart omada-monitor.service", timeout=30)
+        return "✅ Monitor Omada zaktualizowany i zrestartowany."
+    return ("✅ Pobrano omada_monitor.py. Monitor Omada nie jest jeszcze skonfigurowany — "
+            "uruchom raz <code>install_omada.sh</code>.")
+
+
 async def cmd_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/rpi5_update — pobiera nową wersję skryptu i restartuje bota."""
     if not authorized(update):
@@ -963,10 +1087,12 @@ async def cmd_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 shutil.copy2(SCRIPT_PATH, backup)
                 SCRIPT_PATH.write_bytes(content)
                 os.chmod(SCRIPT_PATH, 0o755)
+                omada_info = _update_omada_monitor()
 
                 await update.message.reply_text(
                     f"✅ <b>Aktualizacja zakończona!</b>\n\n"
                     f"Backup: <code>{esc(backup)}</code>\n"
+                    f"{omada_info}\n"
                     "Restartuję bota — chwilowa przerwa w działaniu…",
                     parse_mode="HTML"
                 )
@@ -1100,6 +1226,14 @@ def main():
     )
     app.add_handler(notes_conv)
     app.add_handler(CallbackQueryHandler(notes_callback, pattern="^nts:"))
+
+    # Omada — stan access pointów
+    app.add_handler(CommandHandler("omada",               cmd_omada))
+    app.add_handler(CommandHandler("omada_wszystkie",     cmd_omada_all))
+    app.add_handler(CommandHandler("omada_powiadomienia", cmd_omada_notify))
+    app.add_handler(CallbackQueryHandler(omada_callback, pattern="^omd:"))
+    if omada_monitor is None:
+        logger.warning("Moduł Omada niedostępny: %s", _OMADA_IMPORT_ERROR)
     # Obsługuje edycję notatki gdy uruchomiona z przycisku inline (poza ConversationHandler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, inline_note_edit_receiver), group=1)
 

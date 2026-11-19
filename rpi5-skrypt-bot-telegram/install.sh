@@ -118,11 +118,20 @@ for f in raid_monitor.sh telegram_bot.py; do
     cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
 done
 
+# Monitor Omada (opcjonalny) — konfiguruje go install_omada.sh
+if [[ -f "$SCRIPT_DIR/omada_monitor.py" ]]; then
+    cp "$SCRIPT_DIR/omada_monitor.py" "$INSTALL_DIR/omada_monitor.py"
+    chmod +x "$INSTALL_DIR/omada_monitor.py"
+fi
+
 chmod +x "$INSTALL_DIR/raid_monitor.sh" "$INSTALL_DIR/telegram_bot.py"
 ok "Skrypty skopiowane do $INSTALL_DIR"
 
 # ── Krok 6: Plik ENV ──────────────────────────────────────────
 info "Zapisuję konfigurację…"
+# Zachowaj ustawienia monitora Omada (OMADA_*) z poprzedniej konfiguracji
+OMADA_LINES=""
+[[ -f "$ENV_FILE" ]] && OMADA_LINES=$(grep '^OMADA_' "$ENV_FILE" || true)
 cat > "$ENV_FILE" <<EOF
 # Server Monitor + Currency Monitor + Notatki — konfiguracja
 # Wygenerowano: $(date)
@@ -137,6 +146,9 @@ CURRENCY_DATA_DIR=${CURRENCY_DATA_DIR}
 NOTES_FILE=${NOTES_FILE}
 SCRIPT_UPDATE_URL=${SCRIPT_UPDATE_URL}
 EOF
+if [[ -n "$OMADA_LINES" ]]; then
+    printf '\n# Omada AP Monitor\n%s\n' "$OMADA_LINES" >> "$ENV_FILE"
+fi
 chmod 600 "$ENV_FILE"
 ok "Konfiguracja zapisana w $ENV_FILE"
 

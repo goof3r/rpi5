@@ -4,3 +4,6 @@ __pycache__/
 
 # Standalone repo — mieszka w github.com/goof3r/quakelive-server
 quakelive-server/
+
+# Lokalne dane dostępowe do testów (np. omada.local.env) — nie publikować
+*.local.env
