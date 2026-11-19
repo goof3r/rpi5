@@ -1,0 +1,24 @@
+{
+  "version": "3.0.0",
+  "description": "Pliki instalowane w /opt/server-monitor przez /rpi5_update i install.sh. Nowy plik wtyczki = dopisz go tutaj.",
+  "files": [
+    "telegram_bot.py",
+    "raid_monitor.sh",
+    "plugins/__init__.py",
+    "plugins/ap/__init__.py",
+    "plugins/ap/__main__.py",
+    "plugins/ap/common.py",
+    "plugins/ap/omada.py",
+    "plugins/ap/unifi.py",
+    "plugins/ap/store.py",
+    "plugins/ap/clients.py",
+    "plugins/ap/monitor.py",
+    "plugins/ap/views.py",
+    "plugins/ap/handlers.py"
+  ],
+  "remove": [
+    "omada_monitor.py",
+    "omada_monitor.py.bak"
+  ],
+  "pip": []
+}

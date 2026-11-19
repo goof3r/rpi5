@@ -1,7 +1,10 @@
 # RPi5 Telegram Bot — Monitor serwera
 
 Bot Telegram do zarządzania serwerem (Raspberry Pi 5 / Debian / OpenMediaVault) przez chat.  
-Obsługuje monitoring RAID, dysków, systemu, kursy walut z NBP/Revolut/InternetowyKantor.pl oraz notatki.
+Obsługuje monitoring RAID, dysków, systemu, kursy walut z NBP/Revolut/InternetowyKantor.pl, notatki
+oraz — jako wtyczka — stan access pointów na kontrolerach **Omada** (TP-Link) i **UniFi** (Ubiquiti).
+
+Całość (bot + wtyczki) aktualizuje się z Telegrama komendą `/rpi5_update` — bez logowania na serwer.
 
 ---
 
@@ -18,8 +21,8 @@ Obsługuje monitoring RAID, dysków, systemu, kursy walut z NBP/Revolut/Internet
 | `/rpi5_uptime` | Czas działania, load avg, RAM, temperatura |
 | `/rpi5_logs` | Ostatnie logi monitoringu RAID |
 | `/rpi5_reboot` | Restart serwera (wymaga potwierdzenia) |
-| `/rpi5_update` | Aktualizacja skryptu bota z GitHub |
-| `/rpi5_help` | Lista wszystkich komend |
+| `/rpi5_update` | Aktualizacja bota **i wszystkich wtyczek** z GitHuba |
+| `/rpi5_help` | Lista wszystkich komend (z komendami wtyczek) |
 
 ### Kursy walut
 | Komenda | Opis |
@@ -38,98 +41,88 @@ Obsługuje monitoring RAID, dysków, systemu, kursy walut z NBP/Revolut/Internet
 | `/rpi5_notatki usun <temat>` | Usuń notatkę |
 | `/rpi5_notatki szukaj <fraza>` | Szukaj w notatkach |
 
-### Omada (access pointy)
+### Access pointy (wtyczka `plugins/ap`)
 | Komenda | Opis |
 |---|---|
-| `/omada` | Podsumowanie wszystkich lokalizacji + przyciski do każdej z nich |
-| `/omada <lokalizacja>` | Stan AP w danej lokalizacji (wystarczy fragment nazwy) |
-| `/omada_wszystkie` | Wszystkie AP ze wszystkich lokalizacji |
-| `/omada_powiadomienia` | Godziny wysyłania alertów, przypomnienia, pauza |
+| `/ap` | Podsumowanie wszystkich kontrolerów + przyciski lokalizacji |
+| `/ap <nazwa>` | Lokalizacja albo kontroler (wystarczy fragment nazwy) |
+| `/omada` · `/unifi` | To samo, tylko dla kontrolerów danego typu |
+| `/ap_wszystkie` | Wszystkie AP ze wszystkich kontrolerów |
+| `/kontrolery` | Lista kontrolerów: test połączenia, alerty wł./wył., usuwanie |
+| `/kontroler_dodaj` | Dodanie kontrolera (prowadzi krok po kroku) |
+| `/powiadomienia` | Godziny alertów, przypomnienia, pauza |
 
 ---
 
-## Monitor access pointów Omada
+## Access pointy — Omada i UniFi
 
-`omada_monitor.py` co minutę pyta kontroler TP-Link Omada (Open API) o stan wszystkich AP
-we wszystkich lokalizacjach. Gdy AP ma stan inny niż **Połączony** (rozłączony, utracony
-kontakt, oczekuje, izolowany, aktualizacja…), od razu wysyła alert na Telegram — tym samym
-botem, na ten sam czat.
+Kontrolery dodaje się z Telegrama (`/kontroler_dodaj`) — może ich być dowolnie wiele, różnych
+typów (np. kilku klientów). Bot potrzebuje dostępu **tylko do odczytu**:
 
-- **Alert** od razu po wykryciu; kilka AP naraz → jedna wiadomość z listą.
+| Kontroler | Dostęp | Gdzie go utworzyć |
+|---|---|---|
+| **Omada** (5.9+, w tym 6.x) | Open API — Client ID + Client Secret | Ustawienia → Platform Integration → Open API → Add New App: tryb **Client**, rola **Viewer** |
+| **UniFi** Network 9+ | Klucz API (zalecane) | Ustawienia → Control Plane → Integrations → Create API Key |
+| **UniFi** starsze / bez klucza | Lokalne konto z rolą **View Only** (bez 2FA) | Admins & Users → nowy administrator lokalny |
+
+UniFi działa z konsolami UniFi OS (UDM, Cloud Key, UCG — adres `https://IP`) i z samodzielną
+aplikacją Network (`https://serwer:8443`) — rodzaj jest wykrywany automatycznie.
+
+Wiadomości z kluczami i hasłami bot od razu usuwa z czatu (w grupie potrzebuje do tego prawa
+usuwania wiadomości). Dane zapisuje w `/var/lib/ap-monitor/controllers.json` (tylko root, 0600).
+
+Przy dodawaniu wybierasz, czy kontroler ma **wysyłać alerty**, czy służy **tylko do podglądu**
+(zmienisz to w `/kontrolery`). Dla kontrolerów z alertami bot co minutę sprawdza wszystkie AP:
+
+- **Alert** od razu, gdy AP ma stan inny niż „Połączony”; kilka AP naraz → jedna wiadomość.
 - **Przypomnienia**, gdy AP nie wraca: domyślnie po 30 min, 1 h i 3 h od awarii, potem cisza.
 - **Powrót**: wiadomość „znów połączone” z czasem przerwy.
 - **Kontroler niedostępny** (3 nieudane próby z rzędu) → osobny alert; po jego powrocie pierwsze
   sprawdzenie nie alarmuje (AP muszą się ponownie zgłosić).
-- **Godziny powiadomień** (`/omada_powiadomienia godziny …`): poza oknem zdarzenia są zbierane
-  i wysyłane jednym podsumowaniem, gdy okno się otworzy.
-- **Pauza** (`/omada_powiadomienia pauza 2h`) — np. na czas aktualizacji firmware.
+- **Godziny powiadomień**: poza oknem zdarzenia są zbierane i przychodzą jednym podsumowaniem.
+- **Pauza** — np. na czas aktualizacji firmware.
 
-Stan języka panelu nie ma znaczenia — monitor czyta kody stanu z API, nie napisy.
+Język panelu nie ma znaczenia — bot czyta kody stanu z API, nie napisy.
 
-### Instalacja (po `install.sh`)
-
-1. W kontrolerze: **Ustawienia → Platform Integration → Open API → Add New App**
-   — tryb **Client**, rola tylko do odczytu (Viewer), dostęp do wszystkich lokalizacji.
-   Skopiuj **Client ID** i **Client Secret** (hasło administratora nie jest potrzebne).
-2. Na serwerze (jednorazowo):
-   ```bash
-   cd /tmp && rm -rf rpi5 && git clone https://github.com/goof3r/rpi5.git
-   sudo bash rpi5/rpi5-skrypt-bot-telegram/install_omada.sh
-   ```
-   Instalator zapyta o adres kontrolera i dane Open API (resztę pytań można zatwierdzić Enterem),
-   sprawdzi połączenie (wypisze listę AP), utworzy usługę `omada-monitor`, zaktualizuje bota
-   i go zrestartuje. Na Telegram przyjdzie „Monitor Omada uruchomiony”.
-
-### Aktualizacje
-
-Kolejne wersje wgrywa `/rpi5_update` (wysłane dwa razy) — pobiera z GitHuba `telegram_bot.py`
-**i** `omada_monitor.py`, robi kopie `.bak` i restartuje bota oraz usługę `omada-monitor`.
-Ustawienia w `/etc/server-monitor.env` i `/var/lib/omada-monitor/` zostają bez zmian.
-
-### Ustawienia powiadomień z Telegrama
+### Ustawienia powiadomień
 
 ```
-/omada_powiadomienia                                  — aktualne ustawienia + pomoc
-/omada_powiadomienia godziny zawsze
-/omada_powiadomienia godziny 07:00-22:00
-/omada_powiadomienia godziny pn-pt 07:00-17:00; so,nd 09:00-13:00
-/omada_powiadomienia godziny 22:00-06:00              — okno przez północ
-/omada_powiadomienia przypomnienia 30m 1h 3h
-/omada_powiadomienia przypomnienia brak
-/omada_powiadomienia pauza 2h      (albo: pauza do 18:00)
-/omada_powiadomienia wznow
-/omada_powiadomienia domyslne
+/powiadomienia                                  — aktualne ustawienia + pomoc
+/powiadomienia godziny zawsze
+/powiadomienia godziny 07:00-22:00
+/powiadomienia godziny pn-pt 07:00-17:00; so,nd 09:00-13:00
+/powiadomienia godziny 22:00-06:00              — okno przez północ
+/powiadomienia przypomnienia 30m 1h 3h
+/powiadomienia przypomnienia brak
+/powiadomienia pauza 2h      (albo: pauza do 18:00)
+/powiadomienia wznow
+/powiadomienia domyslne
 ```
 
-Zmiany działają od następnego sprawdzenia, bez restartu (zapis w
-`/var/lib/omada-monitor/settings.json`).
+Zmiany działają od następnego sprawdzenia, bez restartu.
 
-### Konfiguracja (`/etc/server-monitor.env`)
+### Opcjonalne zmienne (`/etc/server-monitor.env`)
 
 | Zmienna | Domyślnie | Opis |
 |---|---|---|
-| `OMADA_URL` | — | Adres kontrolera, np. `https://192.168.1.10:8043` |
-| `OMADA_CLIENT_ID` / `OMADA_CLIENT_SECRET` | — | Dane aplikacji Open API (tryb Client) |
-| `OMADA_ID` | z `/api/info` | omadacId kontrolera (zwykle niepotrzebne) |
-| `OMADA_VERIFY_SSL` | `0` | `1` = sprawdzaj certyfikat (`OMADA_CA_FILE` dla własnego CA) |
-| `OMADA_INTERVAL` | `60` | Co ile sekund sprawdzać |
-| `OMADA_REMIND_MINUTES` | `30,60,180` | Przypomnienia (minuty od początku awarii) |
-| `OMADA_NOTIFY_HOURS` | `zawsze` | Domyślne godziny powiadomień (bot może je nadpisać) |
-| `OMADA_CONFIRM_CHECKS` | `1` | Ile kolejnych złych odczytów przed alertem (1 = od razu) |
-| `OMADA_CONTROLLER_FAIL_CHECKS` | `3` | Ile nieudanych zapytań przed alertem o kontrolerze |
-| `OMADA_IGNORE_MAINTENANCE` | `0` | `1` = nie alarmuj przy aktualizacji/restarcie/provisioningu |
-| `OMADA_DEVICE_TYPES` | `ap` | Typy urządzeń, np. `ap,switch,gateway` |
+| `AP_INTERVAL` | `60` | Co ile sekund sprawdzać (wymaga restartu bota) |
+| `AP_REMIND_MINUTES` | `30,60,180` | Domyślne przypomnienia (bot może je nadpisać) |
+| `AP_NOTIFY_HOURS` | `zawsze` | Domyślne godziny powiadomień (bot może je nadpisać) |
+| `AP_CONFIRM_CHECKS` | `1` | Ile kolejnych złych odczytów przed alertem (1 = od razu) |
+| `AP_CONTROLLER_FAIL_CHECKS` | `3` | Ile nieudanych zapytań przed alertem o kontrolerze |
+| `AP_IGNORE_MAINTENANCE` | `0` | `1` = nie alarmuj przy aktualizacji firmware / provisioningu |
 
-### Diagnostyka
+Ustawienia `OMADA_*` z wersji 2.3 są przy pierwszym starcie 3.0 przenoszone do wtyczki
+(kontroler „Omada” z alertami), a stara usługa `omada-monitor` jest wyłączana.
+
+### Diagnostyka z konsoli
 
 ```bash
-journalctl -u omada-monitor -f
-sudo /opt/server-monitor/venv/bin/python3 /opt/server-monitor/omada_monitor.py list
-sudo /opt/server-monitor/venv/bin/python3 /opt/server-monitor/omada_monitor.py check --dry-run
+cd /opt/server-monitor
+sudo venv/bin/python3 -m plugins.ap list         # stan AP na wszystkich kontrolerach (kolumna KOD = surowy stan)
+sudo venv/bin/python3 -m plugins.ap list --raw   # surowe dane z API
+sudo venv/bin/python3 -m plugins.ap kontrolery   # lista kontrolerów (bez sekretów)
 ```
-
-Zmiana adresu kontrolera lub danych Open API: uruchom ponownie `install_omada.sh`
-(Enter zostawia dotychczasowe wartości).
 
 ---
 
@@ -172,10 +165,11 @@ Instalator przeprowadzi przez konfigurację krok po kroku:
 - Lista dysków do monitorowania
 - Próg zajętości dysku dla alertu
 - Interwał monitorowania (minuty)
-- URL do aktualizacji skryptu *(opcjonalne — patrz sekcja Aktualizacja)*
+- URL do aktualizacji *(opcjonalne — domyślnie to repozytorium)*
 
 Po zakończeniu instalator:
 - Tworzy środowisko Python w `/opt/server-monitor/venv/`
+- Kopiuje bota i wtyczki według `manifest.json`
 - Zapisuje konfigurację w `/etc/server-monitor.env`
 - Rejestruje i uruchamia usługi systemd (`telegram-bot.service`, `server-monitor.timer`)
 - Wysyła testową wiadomość na Telegram
@@ -184,63 +178,58 @@ Po zakończeniu instalator:
 
 | Ścieżka | Zawartość |
 |---|---|
-| `/opt/server-monitor/` | Skrypty bota i RAID monitora |
+| `/opt/server-monitor/` | Bot, wtyczki (`plugins/`), RAID monitor, `manifest.json` |
+| `/opt/server-monitor/.backup/` | Kopie plików sprzed 5 ostatnich aktualizacji |
 | `/etc/server-monitor.env` | Konfiguracja (tokeny, chat ID) |
-| `/var/lib/currency-monitor/` | Historia kursów walut (CSV) |
-| `/var/lib/currency-monitor/notes.json` | Notatki |
+| `/var/lib/currency-monitor/` | Historia kursów walut (CSV), notatki |
+| `/var/lib/ap-monitor/` | Kontrolery AP, ustawienia powiadomień, stan monitora |
 | `/var/log/telegram_bot.log` | Logi bota |
 | `/var/log/raid_monitor.log` | Logi monitoringu RAID |
 
 ### Diagnostyka
 
 ```bash
-# Logi bota na żywo
-journalctl -u telegram-bot -f
-
-# Status usługi
-systemctl status telegram-bot
-
-# Logi RAID monitora
-journalctl -u server-monitor -n 30
+journalctl -u telegram-bot -f        # logi bota na żywo
+systemctl status telegram-bot        # status usługi
+journalctl -u server-monitor -n 30   # logi RAID monitora
 ```
 
 ---
 
-## Aktualizacja skryptu
+## Aktualizacja
 
-### Krok 1 — jednorazowa konfiguracja URL aktualizacji
+Wyślij w Telegramie `/rpi5_update`. Bot sprawdzi GitHub i pokaże, które pliki się zmieniły.
+Wyślij `/rpi5_update` **drugi raz w ciągu 30 sekund**, aby zainstalować. Bot:
 
-Dodaj do `/etc/server-monitor.env` na serwerze:
+1. pobiera `manifest.json` i wszystkie wymienione w nim pliki (bot, wtyczki, skrypty),
+2. sprawdza ich poprawność (składnia Pythona, JSON) — przy błędzie niczego nie zmienia,
+3. zapisuje kopie poprzednich plików w `/opt/server-monitor/.backup/<data>/`,
+4. instaluje nowe pliki, usuwa zbędne, w razie potrzeby doinstalowuje pakiety (`pip`),
+5. restartuje się i potwierdza start nową wersją.
 
-```bash
-echo 'SCRIPT_UPDATE_URL=https://raw.githubusercontent.com/goof3r/rpi5/master/rpi5-skrypt-bot-telegram/telegram_bot.py' \
-  | sudo tee -a /etc/server-monitor.env
+Konfiguracja, kontrolery, notatki i historia kursów zostają bez zmian.
 
-sudo systemctl restart telegram-bot
-```
+Domyślnie aktualizacje pochodzą z tego repozytorium (`goof3r/rpi5`, gałąź `master`); inne źródło
+ustawia `SCRIPT_UPDATE_URL` w `/etc/server-monitor.env` (adres `telegram_bot.py` w katalogu z `manifest.json`).
 
-### Krok 2 — aktualizacja przez Telegram
+**Przejście ze starszej wersji (2.x):** stary bot pobiera przy `/rpi5_update` tylko `telegram_bot.py`
+— nowa wersja przy pierwszym starcie sama dociąga brakujące wtyczki i potwierdza to wiadomością.
+Starsza wersja bota wymaga ustawionego `SCRIPT_UPDATE_URL` (patrz wyżej).
 
-Sprawdza i ściąga najnowszą wersję skryptu :
+### Nowa wtyczka
 
-```
-/rpi5_update
-```
-
-Bot wyświetli bieżącą wersję i źródło. Wyślij `/rpi5_update` **drugi raz w ciągu 30 sekund** aby potwierdzić.
-
-Bot automatycznie:
-1. Pobiera nowy skrypt z GitHub
-2. Sprawdza poprawność składni Python
-3. Tworzy backup (`/opt/server-monitor/telegram_bot.py.bak`)
-4. Zastępuje stary skrypt nowym
-5. Restartuje usługę — konfiguracja i dane są nienaruszone
+Wtyczka to moduł lub pakiet w `plugins/` z funkcją `register(app, core)` (opcjonalnie `HELP`
+z opisem komend). Bot ładuje ją sam przy starcie. Żeby `/rpi5_update` ją pobierał, dopisz jej
+pliki do `manifest.json` (i podnieś `version`).
 
 ### Aktualizacja ręczna (bez Telegrama)
 
 ```bash
-cd /tmp/rpi5 && git pull
-sudo cp rpi5-skrypt-bot-telegram/telegram_bot.py rpi5-skrypt-bot-telegram/omada_monitor.py /opt/server-monitor/
+cd /tmp && rm -rf rpi5 && git clone https://github.com/goof3r/rpi5.git
+cd rpi5/rpi5-skrypt-bot-telegram
+python3 -c 'import json; print("\n".join(json.load(open("manifest.json"))["files"]))' \
+  | while read -r f; do sudo install -D -m 644 "$f" "/opt/server-monitor/$f"; done
+sudo cp manifest.json /opt/server-monitor/
+sudo chmod +x /opt/server-monitor/telegram_bot.py /opt/server-monitor/raid_monitor.sh
 sudo systemctl restart telegram-bot
-sudo systemctl restart omada-monitor   # jeśli zainstalowany
 ```

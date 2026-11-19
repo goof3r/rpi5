@@ -3,20 +3,27 @@
 Telegram Bot — zarządzanie serwerem + monitorowanie kursów walut
 Komendy RAID/serwer: /status /reboot /help /disks /raid /df /uptime /logs
 Komendy walutowe:    /kurs /kurs_historia /kurs_prognoza
+Wtyczki (katalog plugins/) ładują się same — np. access pointy Omada/UniFi.
+Aktualizacja całości (bot + wtyczki wg manifest.json): /rpi5_update
 """
 
 import ast
 import asyncio
+import importlib
 import json
 import logging
 import os
+import pkgutil
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import csv
+import time
 from datetime import datetime, date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
@@ -30,15 +37,7 @@ except ImportError:
     print("Brak biblioteki python-telegram-bot. Zainstaluj: pip3 install python-telegram-bot")
     sys.exit(1)
 
-VERSION = "2.3.0"
-
-# Monitor AP Omada (omada_monitor.py w tym samym katalogu) — opcjonalny
-try:
-    import omada_monitor
-    _OMADA_IMPORT_ERROR = ""
-except Exception as _e:  # brak pliku lub błąd — bot działa dalej bez /omada
-    omada_monitor = None
-    _OMADA_IMPORT_ERROR = str(_e)
+VERSION = "3.0.0"
 
 # ── Konfiguracja ──────────────────────────────────────────────────────────────
 BOT_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -52,8 +51,14 @@ CURRENCY_DATA_DIR = Path(os.environ.get("CURRENCY_DATA_DIR", "/var/lib/currency-
 CURRENCY_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 LOG_FILE    = "/var/log/raid_monitor.log"
-UPDATE_URL  = os.environ.get("SCRIPT_UPDATE_URL", "")
+DEFAULT_UPDATE_URL = ("https://raw.githubusercontent.com/goof3r/rpi5/master/"
+                      "rpi5-skrypt-bot-telegram/telegram_bot.py")
+UPDATE_URL  = os.environ.get("SCRIPT_UPDATE_URL", "").strip() or DEFAULT_UPDATE_URL
 SCRIPT_PATH = Path(__file__).resolve()
+BASE_DIR    = SCRIPT_PATH.parent
+LOCAL_MANIFEST = BASE_DIR / "manifest.json"
+UPDATE_MARKER  = BASE_DIR / ".update_done"
+BACKUP_DIR     = BASE_DIR / ".backup"
 
 # Plik notatek
 NOTES_FILE = Path(os.environ.get("NOTES_FILE", "/var/lib/currency-monitor/notes.json"))
@@ -446,90 +451,36 @@ async def notes_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML",
             )
 
-# ── Omada — stan access pointów ──────────────────────────────────────────────
+# ── Wtyczki (katalog plugins/) ───────────────────────────────────────────────
 
-def _omada_markup(buttons) -> InlineKeyboardMarkup | None:
-    if not buttons:
-        return None
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(label, callback_data=data) for label, data in row]
-        for row in buttons
-    ])
+PLUGINS_HELP: list[str] = []
+PLUGIN_ERRORS: list[str] = []
+STARTUP_NOTES: list[str] = []
 
 
-async def _omada_unavailable(message) -> bool:
-    if omada_monitor is None:
-        await message.reply_text(
-            "⚠️ Moduł Omada niedostępny (brak omada_monitor.py obok bota?)\n"
-            f"<code>{esc(_OMADA_IMPORT_ERROR)}</code>", parse_mode="HTML")
-        return True
-    return False
-
-
-async def _omada_reply(message, text: str, buttons) -> None:
-    """Wysyła odpowiedź; długi tekst dzieli na części, przyciski pod ostatnią."""
-    parts = omada_monitor.split_message(text)
-    for part in parts[:-1]:
-        await message.reply_text(part, parse_mode="HTML")
-    await message.reply_text(parts[-1] if parts else "—", parse_mode="HTML",
-                             reply_markup=_omada_markup(buttons))
-
-
-async def cmd_omada(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/omada — podsumowanie; /omada <lokalizacja> — AP w lokalizacji."""
-    if not authorized(update) or await _omada_unavailable(update.message):
+def load_plugins(app) -> None:
+    """Ładuje każdy moduł/pakiet z plugins/, który ma register(app, core)."""
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
+    try:
+        import plugins
+    except ImportError:
+        logger.info("Brak katalogu plugins/ — bot działa bez wtyczek")
         return
-    wait = await update.message.reply_text("⏳ Pytam kontroler Omada…")
-    query = " ".join(ctx.args or []).strip()
-    if query:
-        text, buttons = await asyncio.to_thread(omada_monitor.bot_site, query)
-    else:
-        text, buttons = await asyncio.to_thread(omada_monitor.bot_summary)
-    await wait.delete()
-    await _omada_reply(update.message, text, buttons)
-
-
-async def cmd_omada_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not authorized(update) or await _omada_unavailable(update.message):
-        return
-    wait = await update.message.reply_text("⏳ Pytam kontroler Omada…")
-    text, buttons = await asyncio.to_thread(omada_monitor.bot_all)
-    await wait.delete()
-    await _omada_reply(update.message, text, buttons)
-
-
-async def cmd_omada_notify(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/omada_powiadomienia — godziny wysyłania, przypomnienia, pauza."""
-    if not authorized(update) or await _omada_unavailable(update.message):
-        return
-    text = await asyncio.to_thread(omada_monitor.bot_notify, list(ctx.args or []))
-    await _send_pages(update.message, text)
-
-
-async def omada_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Przyciski: omd:sum (podsumowanie), omd:all (wszystkie), omd:s:<siteId>."""
-    query = update.callback_query
-    if not authorized(update) or omada_monitor is None:
-        await query.answer("Brak dostępu")
-        return
-    await query.answer("Odświeżam…")
-    data = query.data or ""
-    if data.startswith("omd:s:"):
-        text, buttons = await asyncio.to_thread(omada_monitor.bot_site, data[6:], None, True)
-    elif data == "omd:all":
-        text, buttons = await asyncio.to_thread(omada_monitor.bot_all)
-    else:
-        text, buttons = await asyncio.to_thread(omada_monitor.bot_summary)
-
-    if len(text) <= 3800:
+    core = SimpleNamespace(authorized=authorized, esc=esc, send_pages=_send_pages, chat_id=CHAT_ID,
+                           logger=logger, run=run, version=VERSION, base_dir=BASE_DIR,
+                           startup_notes=STARTUP_NOTES)
+    for mod in sorted(pkgutil.iter_modules(plugins.__path__), key=lambda m: m.name):
         try:
-            await query.edit_message_text(text, parse_mode="HTML",
-                                          reply_markup=_omada_markup(buttons))
+            module = importlib.import_module(f"plugins.{mod.name}")
+            if hasattr(module, "register"):
+                module.register(app, core)
+            if getattr(module, "HELP", ""):
+                PLUGINS_HELP.append(module.HELP)
+            logger.info("Wtyczka %s załadowana", mod.name)
         except Exception as e:
-            if "not modified" not in str(e).lower():  # odświeżenie bez zmian
-                logger.warning("Omada callback: %s", e)
-    else:
-        await _omada_reply(query.message, text, buttons)
+            logger.exception("Wtyczka %s: błąd ładowania", mod.name)
+            PLUGIN_ERRORS.append(f"{mod.name}: {e}")
 
 # ── Helpers kursów walut ──────────────────────────────────────────────────────
 
@@ -775,8 +726,11 @@ async def cmd_kurs_prognoza(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ── Komendy serwera (bez zmian) ───────────────────────────────────────────────
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🖥️ <b>Bot monitorowania serwera i kursów walut</b>\n\n"
+    extra = "".join(f"\n\n{h}" for h in PLUGINS_HELP)
+    if PLUGIN_ERRORS:
+        extra += "\n\n⚠️ <b>Wtyczki z błędem:</b>\n" + "\n".join(f"  {esc(e)}" for e in PLUGIN_ERRORS)
+    await _send_pages(update.message,
+        f"🖥️ <b>Bot monitorowania serwera i kursów walut</b> <i>v{VERSION}</i>\n\n"
         "<b>── Serwer (RPi5) ──</b>\n"
         "  /rpi5_status   — pełny przegląd systemu\n"
         "  /rpi5_info     — informacje o systemie (uname)\n"
@@ -786,7 +740,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "  /rpi5_uptime   — czas działania serwera\n"
         "  /rpi5_logs     — ostatnie logi monitoringu\n"
         "  /rpi5_reboot   — REBOOT serwera\n"
-        "  /rpi5_update   — aktualizacja skryptu bota\n"
+        "  /rpi5_update   — aktualizacja bota i wtyczek z GitHuba\n"
         "  /rpi5_help     — ta wiadomość\n\n"
         "<b>── Kursy walut (NBP) ──</b>\n"
         "  /kurs           — aktualny kurs USD i EUR\n"
@@ -798,13 +752,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "  /rpi5_notatki czytaj &lt;temat&gt;    — odczytaj\n"
         "  /rpi5_notatki edytuj &lt;temat&gt;    — edytuj\n"
         "  /rpi5_notatki usun &lt;temat&gt;      — usuń\n"
-        "  /rpi5_notatki szukaj &lt;fraza&gt;    — szukaj\n\n"
-        "<b>── Omada (access pointy) ──</b>\n"
-        "  /omada                  — podsumowanie lokalizacji\n"
-        "  /omada &lt;lokalizacja&gt;     — AP w danej lokalizacji\n"
-        "  /omada_wszystkie        — wszystkie AP\n"
-        "  /omada_powiadomienia    — godziny, przypomnienia, pauza",
-        parse_mode="HTML"
+        "  /rpi5_notatki szukaj &lt;fraza&gt;    — szukaj"
+        + extra
     )
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -987,7 +936,6 @@ async def cmd_logs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 _reboot_pending: dict[int, datetime] = {}
-_update_pending: dict[int, datetime] = {}
 
 async def cmd_reboot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not authorized(update):
@@ -1018,105 +966,188 @@ async def cmd_reboot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-def _update_omada_monitor() -> str:
-    """Przy /rpi5_update pobiera też omada_monitor.py (z tego samego katalogu w repo)
-    i restartuje usługę omada-monitor, jeśli jest zainstalowana. Błąd nie blokuje
-    aktualizacji bota."""
-    url = UPDATE_URL.rsplit("/", 1)[0] + "/omada_monitor.py"
-    path = SCRIPT_PATH.parent / "omada_monitor.py"
+# ── Aktualizacja z GitHuba: bot + wtyczki + skrypty wg manifest.json ─────────
+
+_SAFE_PATH = re.compile(r"^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$")
+_update_plans: dict[int, tuple[datetime, dict]] = {}
+
+
+def _http_get(url: str, timeout: int = 30) -> bytes:
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"})
+    with urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def _update_base() -> str:
+    return UPDATE_URL.rsplit("/", 1)[0]
+
+
+def _safe_rel(rel: str) -> bool:
+    return bool(_SAFE_PATH.match(rel)) and ".." not in rel.split("/")
+
+
+def _check_file(rel: str, content: bytes) -> None:
+    """Nie instaluj uszkodzonych plików (np. obcięty download)."""
+    if rel.endswith(".py"):
+        ast.parse(content, filename=rel)
+    elif rel.endswith(".json"):
+        json.loads(content.decode("utf-8"))
+    elif rel.endswith(".sh") and not content.startswith(b"#!"):
+        raise ValueError(f"{rel}: to nie wygląda na skrypt")
+
+
+def _fetch_manifest() -> dict:
+    raw = _http_get(_update_base() + "/manifest.json")
+    m = json.loads(raw.decode("utf-8"))
+    files = m.get("files")
+    if not isinstance(files, list) or not files or not all(isinstance(f, str) and _safe_rel(f) for f in files):
+        raise ValueError("manifest.json: niepoprawna lista plików")
+    m["remove"] = [r for r in m.get("remove", []) if isinstance(r, str) and _safe_rel(r)]
+    m["_raw"] = raw
+    return m
+
+
+def _plan_update(manifest: dict, only_missing: bool = False, skip_self: bool = False) -> dict:
+    """Pobiera pliki z manifestu i zwraca te, które różnią się od zainstalowanych."""
+    base = _update_base()
+    changed: dict[str, bytes] = {}
+    for rel in manifest["files"]:
+        target = BASE_DIR / rel
+        if (skip_self and target == SCRIPT_PATH) or (only_missing and target.exists()):
+            continue
+        content = _http_get(f"{base}/{rel}")
+        _check_file(rel, content)
+        if not target.exists() or target.read_bytes() != content:
+            changed[rel] = content
+    removed = [r for r in manifest["remove"] if (BASE_DIR / r).exists()]
+    return {"version": str(manifest.get("version") or "?"), "changed": changed, "removed": removed,
+            "pip": [p for p in manifest.get("pip", []) if isinstance(p, str)], "manifest": manifest["_raw"]}
+
+
+def _apply_update(plan: dict) -> Path:
+    """Zapisuje pliki (z kopią zapasową w .backup/), usuwa zbędne, doinstalowuje pakiety pip."""
+    backup = BACKUP_DIR / datetime.now().strftime("%Y%m%d-%H%M%S")
+    for rel in list(plan["changed"]) + plan["removed"]:
+        src = BASE_DIR / rel
+        if src.exists():
+            dst = backup / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+    for rel, content in plan["changed"].items():
+        target = BASE_DIR / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".new")
+        tmp.write_bytes(content)
+        os.chmod(tmp, 0o755 if rel.endswith(".sh") or target == SCRIPT_PATH else 0o644)
+        os.replace(tmp, target)
+    for rel in plan["removed"]:
+        try:
+            (BASE_DIR / rel).unlink()
+        except OSError:
+            pass
+    LOCAL_MANIFEST.write_bytes(plan["manifest"])
+    if plan["pip"] and plan["changed"]:
+        pip = Path(sys.executable).with_name("pip")
+        rc, _, err = run(f"{shlex.quote(str(pip))} install --quiet "
+                         + " ".join(shlex.quote(p) for p in plan["pip"]), timeout=900)
+        if rc != 0:
+            logger.warning("pip install: %s", err)
     try:
-        with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=30) as resp:
-            content = resp.read()
-        ast.parse(content)
-        if path.exists():
-            if path.read_bytes() == content:
-                return "Monitor Omada: bez zmian."
-            shutil.copy2(path, str(path) + ".bak")
-        path.write_bytes(content)
-        os.chmod(path, 0o755)
+        for old in sorted(BACKUP_DIR.iterdir())[:-5]:   # zostaw 5 ostatnich kopii
+            shutil.rmtree(old, ignore_errors=True)
+    except OSError:
+        pass
+    return backup
+
+
+def sync_components() -> list[str]:
+    """Przy starcie bota: dociąga z GitHuba pliki, których brakuje (np. wtyczki po aktualizacji
+    starszą wersją bota, która pobierała tylko telegram_bot.py). Samego bota nie podmienia."""
+    notes: list[str] = []
+    try:
+        if UPDATE_MARKER.exists():
+            notes.append(UPDATE_MARKER.read_text(encoding="utf-8").strip())
+            UPDATE_MARKER.unlink()
+    except OSError:
+        pass
+    try:
+        local = json.loads(LOCAL_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        local = None
+    up_to_date = bool(local) and local.get("version") == VERSION
+    if up_to_date and all((BASE_DIR / f).exists() for f in local.get("files", [])):
+        return notes
+    try:
+        plan = _plan_update(_fetch_manifest(), only_missing=up_to_date, skip_self=True)
+        if plan["changed"] or plan["removed"] or not local:
+            _apply_update(plan)
     except Exception as e:
-        return f"⚠️ Monitor Omada nie zaktualizowany: <code>{esc(str(e))}</code>"
-    rc, _, _ = run("systemctl is-enabled --quiet omada-monitor.service")
-    if rc == 0:
-        run("systemctl restart omada-monitor.service", timeout=30)
-        return "✅ Monitor Omada zaktualizowany i zrestartowany."
-    return ("✅ Pobrano omada_monitor.py. Monitor Omada nie jest jeszcze skonfigurowany — "
-            "uruchom raz <code>install_omada.sh</code>.")
+        logger.warning("Dociąganie plików z GitHuba nieudane: %s", e)
+        notes.append(f"⚠️ Nie udało się pobrać plików z GitHuba ({esc(str(e))}) — "
+                     "spróbuję przy następnym starcie albo przez /rpi5_update.")
+        return notes
+    if plan["changed"] or plan["removed"]:
+        notes.append("📦 Dociągnięto z GitHuba: " + ", ".join(sorted(plan["changed"]) or ["—"])
+                     + (" · usunięto: " + ", ".join(plan["removed"]) if plan["removed"] else ""))
+    return notes
 
 
 async def cmd_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/rpi5_update — pobiera nową wersję skryptu i restartuje bota."""
+    """/rpi5_update — sprawdza GitHub; drugie wysłanie w ciągu 30 s instaluje całość i restartuje bota."""
     if not authorized(update):
         await update.message.reply_text("🚫 Brak uprawnień.")
         return
-
-    if not UPDATE_URL:
-        await update.message.reply_text(
-            "⚠️ <b>Brak URL aktualizacji.</b>\n\n"
-            "Dodaj do <code>/etc/server-monitor.env</code>:\n"
-            "<code>SCRIPT_UPDATE_URL=https://raw.githubusercontent.com/UZYTKOWNIK/REPO/main/rpi5-skrypt-bot-telegram/telegram_bot.py</code>\n\n"
-            "Następnie: <code>systemctl restart telegram-bot</code>",
-            parse_mode="HTML"
-        )
-        return
-
     uid = update.effective_user.id
     now = datetime.now()
 
-    if uid in _update_pending:
-        delta = (now - _update_pending[uid]).total_seconds()
-        if delta < 30:
-            del _update_pending[uid]
-            await update.message.reply_text("⏳ Pobieram nową wersję skryptu…")
-            try:
-                req = Request(UPDATE_URL, headers={"User-Agent": "Mozilla/5.0"})
-                with urlopen(req, timeout=30) as resp:
-                    content = resp.read()
-
-                try:
-                    ast.parse(content)
-                except SyntaxError as e:
-                    await update.message.reply_text(
-                        f"❌ <b>Błąd składni w pobranym skrypcie:</b>\n<code>{esc(str(e))}</code>\n"
-                        "Aktualizacja anulowana — stary skrypt zachowany.",
-                        parse_mode="HTML"
-                    )
-                    return
-
-                backup = str(SCRIPT_PATH) + ".bak"
-                shutil.copy2(SCRIPT_PATH, backup)
-                SCRIPT_PATH.write_bytes(content)
-                os.chmod(SCRIPT_PATH, 0o755)
-                omada_info = _update_omada_monitor()
-
-                await update.message.reply_text(
-                    f"✅ <b>Aktualizacja zakończona!</b>\n\n"
-                    f"Backup: <code>{esc(backup)}</code>\n"
-                    f"{omada_info}\n"
-                    "Restartuję bota — chwilowa przerwa w działaniu…",
-                    parse_mode="HTML"
-                )
-                run("sleep 3 && systemctl restart telegram-bot.service")
-
-            except Exception as e:
-                await update.message.reply_text(
-                    f"❌ <b>Błąd aktualizacji:</b>\n<code>{esc(str(e))}</code>",
-                    parse_mode="HTML"
-                )
+    pending = _update_plans.pop(uid, None)
+    if pending and (now - pending[0]).total_seconds() < 30:
+        plan = pending[1]
+        await update.message.reply_text("⏳ Instaluję aktualizację…")
+        try:
+            backup = await asyncio.to_thread(_apply_update, plan)
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ <b>Błąd instalacji:</b>\n<code>{esc(str(e))}</code>\n"
+                f"Kopia poprzednich plików: <code>{esc(str(BACKUP_DIR))}</code>", parse_mode="HTML")
             return
-        else:
-            del _update_pending[uid]
+        try:
+            UPDATE_MARKER.write_text(f"✅ Zaktualizowano z {VERSION} do {plan['version']} "
+                                     f"(plików: {len(plan['changed'])}).", encoding="utf-8")
+        except OSError:
+            pass
+        await update.message.reply_text(
+            f"✅ <b>Zainstalowano wersję {esc(plan['version'])}</b>\n"
+            f"Kopia poprzednich plików: <code>{esc(str(backup))}</code>\n"
+            "Restartuję bota — za chwilę potwierdzi start…", parse_mode="HTML")
+        run("sleep 3 && systemctl restart telegram-bot.service")
+        return
 
-    _update_pending[uid] = now
-    await update.message.reply_text(
-        f"🔄 <b>Aktualizacja bota</b>\n\n"
-        f"Bieżąca wersja: <code>{VERSION}</code>\n"
-        f"Źródło: <code>{esc(UPDATE_URL)}</code>\n\n"
-        "Wyślij <code>/rpi5_update</code> ponownie w ciągu <b>30 sekund</b> aby potwierdzić.\n\n"
-        "⚠️ Bot zostanie chwilowo wyłączony podczas restartu.\n"
-        "Konfiguracja (tokeny, chat ID) pozostanie nienaruszona.",
-        parse_mode="HTML"
-    )
+    msg = await update.message.reply_text("🔎 Sprawdzam aktualizacje na GitHubie…")
+    try:
+        plan = await asyncio.to_thread(lambda: _plan_update(_fetch_manifest()))
+    except Exception as e:
+        await msg.edit_text(f"❌ <b>Nie udało się sprawdzić aktualizacji:</b>\n<code>{esc(str(e))}</code>\n"
+                            f"Źródło: <code>{esc(_update_base())}</code>", parse_mode="HTML")
+        return
+    if not plan["changed"] and not plan["removed"]:
+        await msg.edit_text(f"✅ Masz najnowszą wersję (<code>{VERSION}</code>) — nic do zrobienia.",
+                            parse_mode="HTML")
+        return
+    _update_plans[uid] = (now, plan)
+    files = sorted(plan["changed"])
+    listing = "\n".join(f"• <code>{esc(f)}</code>" for f in files[:20])
+    if len(files) > 20:
+        listing += f"\n• … i {len(files) - 20} więcej"
+    if plan["removed"]:
+        listing += "\n" + "\n".join(f"• usunięcie <code>{esc(f)}</code>" for f in plan["removed"])
+    await msg.edit_text(
+        f"🔄 <b>Dostępna aktualizacja</b>\n"
+        f"Wersja: <code>{VERSION}</code> → <code>{esc(plan['version'])}</code>\n"
+        f"Zmiany ({len(files) + len(plan['removed'])}):\n{listing}\n\n"
+        "Wyślij <code>/rpi5_update</code> ponownie w ciągu <b>30 sekund</b>, aby zainstalować.\n"
+        "Konfiguracja, kontrolery i notatki zostaną bez zmian; bot zrestartuje się na chwilę.",
+        parse_mode="HTML")
 
 
 # ── Harmonogram automatycznych raportów walutowych ───────────────────────────
@@ -1182,6 +1213,16 @@ async def inline_note_edit_receiver(update: Update, ctx: ContextTypes.DEFAULT_TY
     ok_flag, msg = notes_update(temat, nowa)
     await update.message.reply_text(("" if ok_flag else "⚠️ ") + msg, parse_mode="HTML")
 
+async def startup_notice(context: ContextTypes.DEFAULT_TYPE):
+    """Po aktualizacji / dociągnięciu wtyczek / migracji — jedna wiadomość na czat."""
+    lines = [f"🤖 <b>Bot v{VERSION} uruchomiony</b>"] + STARTUP_NOTES
+    if PLUGIN_ERRORS:
+        lines.append("⚠️ <b>Wtyczki z błędem:</b>\n" + "\n".join(esc(e) for e in PLUGIN_ERRORS))
+    try:
+        await context.bot.send_message(chat_id=CHAT_ID, text="\n".join(lines), parse_mode="HTML")
+    except Exception as e:
+        logger.warning("Wiadomość startowa: %s", e)
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1189,7 +1230,8 @@ def main():
         logger.error("Brak TELEGRAM_BOT_TOKEN!")
         sys.exit(1)
 
-    logger.info("Uruchamiam bota…")
+    logger.info("Uruchamiam bota v%s…", VERSION)
+    STARTUP_NOTES.extend(sync_components())   # brakujące wtyczki/pliki z GitHuba
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Komendy serwera — prefix rpi5_
@@ -1227,13 +1269,8 @@ def main():
     app.add_handler(notes_conv)
     app.add_handler(CallbackQueryHandler(notes_callback, pattern="^nts:"))
 
-    # Omada — stan access pointów
-    app.add_handler(CommandHandler("omada",               cmd_omada))
-    app.add_handler(CommandHandler("omada_wszystkie",     cmd_omada_all))
-    app.add_handler(CommandHandler("omada_powiadomienia", cmd_omada_notify))
-    app.add_handler(CallbackQueryHandler(omada_callback, pattern="^omd:"))
-    if omada_monitor is None:
-        logger.warning("Moduł Omada niedostępny: %s", _OMADA_IMPORT_ERROR)
+    # Wtyczki z katalogu plugins/ (np. access pointy Omada/UniFi)
+    load_plugins(app)
     # Obsługuje edycję notatki gdy uruchomiona z przycisku inline (poza ConversationHandler)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, inline_note_edit_receiver), group=1)
 
@@ -1246,6 +1283,8 @@ def main():
             name="currency_hourly"
         )
         logger.info("Harmonogram kursów walut aktywny (co 1h, raporty o 08:00 i 20:00)")
+        if STARTUP_NOTES or PLUGIN_ERRORS:
+            app.job_queue.run_once(startup_notice, when=5, name="startup_notice")
 
     logger.info("Bot gotowy. Czekam na komendy…")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

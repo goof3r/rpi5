@@ -113,16 +113,16 @@ ok "Środowisko Python gotowe (z job-queue)"
 info "Kopiuję skrypty…"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-for f in raid_monitor.sh telegram_bot.py; do
+# Lista plików (bot + wtyczki) z manifest.json — ta sama, której używa /rpi5_update
+[[ -f "$SCRIPT_DIR/manifest.json" ]] || die "Brak manifest.json w $SCRIPT_DIR"
+mapfile -t FILES < <(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["files"]))' \
+    "$SCRIPT_DIR/manifest.json")
+for f in "${FILES[@]}"; do
     [[ -f "$SCRIPT_DIR/$f" ]] || die "Brak pliku $f w $SCRIPT_DIR"
-    cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
+    install -D -m 644 "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
 done
-
-# Monitor Omada (opcjonalny) — konfiguruje go install_omada.sh
-if [[ -f "$SCRIPT_DIR/omada_monitor.py" ]]; then
-    cp "$SCRIPT_DIR/omada_monitor.py" "$INSTALL_DIR/omada_monitor.py"
-    chmod +x "$INSTALL_DIR/omada_monitor.py"
-fi
+cp "$SCRIPT_DIR/manifest.json" "$INSTALL_DIR/manifest.json"
+rm -f "$INSTALL_DIR/omada_monitor.py"   # z wersji 2.3 — monitor AP jest teraz wtyczką bota
 
 chmod +x "$INSTALL_DIR/raid_monitor.sh" "$INSTALL_DIR/telegram_bot.py"
 ok "Skrypty skopiowane do $INSTALL_DIR"
@@ -259,6 +259,8 @@ echo "             /rpi5_notatki czytaj <temat>"
 echo "             /rpi5_notatki edytuj <temat>"
 echo "             /rpi5_notatki usun <temat>"
 echo "             /rpi5_notatki szukaj <fraza>"
+echo "    AP:      /ap /omada /unifi /kontrolery /kontroler_dodaj /powiadomienia"
+echo "    Aktualizacja bota i wtyczek: /rpi5_update (dwa razy)"
 echo ""
 echo "  Diagnostyka:"
 echo "    journalctl -u telegram-bot -f"
